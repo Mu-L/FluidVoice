@@ -319,6 +319,10 @@ final class FluidAudioProvider: TranscriptionProvider {
             DebugLogger.shared.info("ASR_BENCH provider_sliding_rejected reason=repeated_clause_opening", source: "ASRBenchmark")
             return false
         }
+        guard !self.hasRepeatedWordTail(cleaned) else {
+            DebugLogger.shared.info("ASR_BENCH provider_sliding_rejected reason=repeated_word_tail", source: "ASRBenchmark")
+            return false
+        }
         guard !self.latestStreamingPreviewText.isEmpty else { return true }
 
         let minimumLength = Int(Double(self.latestStreamingPreviewText.count) * 0.92)
@@ -388,6 +392,29 @@ final class FluidAudioProvider: TranscriptionProvider {
                 return true
             }
         }
+        return false
+    }
+
+    private func hasRepeatedWordTail(_ text: String) -> Bool {
+        let words = text
+            .lowercased()
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+
+        for word in words where word.count >= 12 {
+            let characters = Array(word)
+            let maxTailLength = min(10, characters.count / 2 + 2)
+            guard maxTailLength >= 5 else { continue }
+
+            for tailLength in 5...maxTailLength {
+                let tail = String(characters.suffix(tailLength))
+                let prefix = String(characters.dropLast(tailLength))
+                if prefix.contains(tail) {
+                    return true
+                }
+            }
+        }
+
         return false
     }
 
