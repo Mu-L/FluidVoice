@@ -1571,9 +1571,46 @@ struct ContentView: View {
 
         DebugLogger.shared.debug("processTextWithAI using provider=\(derivedCurrentProvider), model=\(derivedSelectedModel)", source: "ContentView")
 
+        let appInfo = self.recordingAppInfo ?? self.getCurrentAppInfo()
+        let isDictationCall = overrideSystemPrompt != nil || dictationSlot != nil
+        let useFluidIntelligence = overrideSystemPrompt == nil &&
+            isDictationCall &&
+            FluidIntelligenceIntegrationService.shouldHandleDictation(model: derivedSelectedModel)
+
+        if useFluidIntelligence {
+            if self.shouldTracePromptProcessing {
+                self.logDictationPromptTrace("Fluid Intelligence task", value: "dictationEnhancement")
+                self.logDictationPromptTrace("Input transcription (Q)", value: inputText)
+                self.logDictationPromptTrace("Selected context text", value: "<none (dictation mode)>")
+            }
+
+            let apiKey = storedProviderAPIKeys[derivedCurrentProvider] ?? storedProviderAPIKeys[currentSelectedProviderID] ?? ""
+            let response = try await FluidIntelligenceIntegrationService.shared.enhanceDictation(
+                inputText,
+                runtime: FluidIntelligenceIntegrationService.RuntimeConfiguration(
+                    selectedProviderID: currentSelectedProviderID,
+                    providerKey: derivedCurrentProvider,
+                    baseURL: derivedBaseURL,
+                    model: derivedSelectedModel,
+                    apiKey: apiKey,
+                    localModelPath: FluidIntelligenceIntegrationService.configuredLocalModelPath
+                ),
+                context: FluidIntelligenceIntegrationService.AppContext(
+                    appName: appInfo.name,
+                    bundleID: appInfo.bundleId,
+                    windowTitle: appInfo.windowTitle,
+                    appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+                )
+            )
+
+            if self.shouldTracePromptProcessing {
+                self.logDictationPromptTrace("Model answer (A)", value: response.outputText)
+            }
+            return response.outputText
+        }
+
         // Resolve the effective prompt once so every provider path honors
         // transient overrides such as "Transcribe with Prompt".
-        let appInfo = self.recordingAppInfo ?? self.getCurrentAppInfo()
         let promptText: String = {
             let override = overrideSystemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if !override.isEmpty { return override }
@@ -1585,17 +1622,9 @@ struct ContentView: View {
         // the transcript after a blank line). Non-dictation callers — the AI
         // chat tab specifically — keep the legacy two-message layout where
         // the prompt is the system turn and the input is the user turn.
-        let isDictationCall = overrideSystemPrompt != nil || dictationSlot != nil
-        let useFluid1PromptFormat = overrideSystemPrompt == nil &&
-            isDictationCall &&
-            Fluid1PromptFormat.matches(model: derivedSelectedModel)
-
         let systemPrompt: String
         let userMessageContent: String
-        if useFluid1PromptFormat {
-            systemPrompt = Fluid1PromptFormat.systemPrompt
-            userMessageContent = inputText
-        } else if isDictationCall {
+        if isDictationCall {
             systemPrompt = ""
             userMessageContent = SettingsStore.renderDictationUserMessage(
                 promptText: promptText,
@@ -1743,7 +1772,7 @@ struct ContentView: View {
             apiKey: apiKey,
             streaming: enableStreaming,
             tools: [],
-            temperature: isTemperatureUnsupported ? nil : (useFluid1PromptFormat ? 0 : 0.2),
+            temperature: isTemperatureUnsupported ? nil : 0.2,
             extraParameters: extraParams
         )
 

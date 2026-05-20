@@ -33,20 +33,37 @@ final class DictationPostProcessingService {
             source: "DictationPostProcessingService"
         )
 
-        let promptText = settings.effectiveDictationSystemPrompt(for: dictationSlot, appBundleID: nil)
-        let useFluid1PromptFormat = Fluid1PromptFormat.matches(model: resolved.model)
-        let systemPrompt: String
-        let userMessageContent: String
-        if useFluid1PromptFormat {
-            systemPrompt = Fluid1PromptFormat.systemPrompt
-            userMessageContent = trimmed
-        } else {
-            systemPrompt = ""
-            userMessageContent = SettingsStore.renderDictationUserMessage(
-                promptText: promptText,
-                transcript: trimmed
+        if FluidIntelligenceIntegrationService.shouldHandleDictation(model: resolved.model) {
+            let response = try await FluidIntelligenceIntegrationService.shared.enhanceDictation(
+                trimmed,
+                runtime: FluidIntelligenceIntegrationService.RuntimeConfiguration(
+                    selectedProviderID: resolved.providerID,
+                    providerKey: resolved.providerKey,
+                    baseURL: resolved.baseURL,
+                    model: resolved.model,
+                    apiKey: resolved.apiKey,
+                    localModelPath: FluidIntelligenceIntegrationService.configuredLocalModelPath
+                ),
+                context: FluidIntelligenceIntegrationService.AppContext(
+                    appName: "",
+                    bundleID: "",
+                    windowTitle: "",
+                    appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+                )
+            )
+            return Result(
+                text: ASRService.applyGAAVFormatting(response.outputText),
+                providerID: resolved.providerID,
+                model: resolved.model
             )
         }
+
+        let promptText = settings.effectiveDictationSystemPrompt(for: dictationSlot, appBundleID: nil)
+        let systemPrompt = ""
+        let userMessageContent = SettingsStore.renderDictationUserMessage(
+            promptText: promptText,
+            transcript: trimmed
+        )
 
         if resolved.providerID == "apple-intelligence" {
             #if canImport(FoundationModels)
@@ -85,7 +102,7 @@ final class DictationPostProcessingService {
             apiKey: resolved.apiKey,
             streaming: false,
             tools: [],
-            temperature: settings.isTemperatureUnsupported(resolved.model) ? nil : (useFluid1PromptFormat ? 0 : 0.2),
+            temperature: settings.isTemperatureUnsupported(resolved.model) ? nil : 0.2,
             extraParameters: extraParams
         )
         config.timeoutSeconds = 120

@@ -58,6 +58,7 @@ private actor ModelDownloadRegistry {
     }
 }
 
+// swiftlint:disable type_body_length
 /// A comprehensive speech recognition service that handles real-time audio transcription.
 ///
 /// This service manages the entire ASR (Automatic Speech Recognition) pipeline including:
@@ -2817,6 +2818,8 @@ final class ASRService: ObservableObject {
         return result
     }
 }
+
+// swiftlint:enable type_body_length
 
 private extension ASRService {
     /// Stops the streaming timer and waits for the task to complete.

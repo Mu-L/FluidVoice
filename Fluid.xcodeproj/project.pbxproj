@@ -12,6 +12,7 @@
 		7C3236542EAAD608007E4CB6 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = 7C3236532EAAD608007E4CB6 /* MCP */; };
 		7C3697892ED70F9C005874CE /* DynamicNotchKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7C3697882ED70F9C005874CE /* DynamicNotchKit */; };
 		7C5AF14B2F15041600DE21B0 /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = 7C5AF14A2F15041600DE21B0 /* MediaRemoteAdapter */; };
+		7CF1A1002F4D5C0100FB7CAF /* FluidIntelligence in Frameworks */ = {isa = PBXBuildFile; productRef = 7CF1A1022F4D5C0100FB7CAF /* FluidIntelligence */; };
 		7CDB0A2D2F3C4D5600FB7CAD /* DictationE2ETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CDB0A292F3C4D5600FB7CAD /* DictationE2ETests.swift */; };
 		7CDB0A2E2F3C4D5600FB7CAD /* AudioFixtureLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CDB0A2A2F3C4D5600FB7CAD /* AudioFixtureLoader.swift */; };
 		7CDB0A2F2F3C4D5600FB7CAD /* dictation_fixture.wav in Resources */ = {isa = PBXBuildFile; fileRef = 7CDB0A2B2F3C4D5600FB7CAD /* dictation_fixture.wav */; };
@@ -56,6 +57,7 @@
 				7C3236542EAAD608007E4CB6 /* MCP in Frameworks */,
 				7C1C72F22EECBD1300E3BF4D /* SwiftWhisper in Frameworks */,
 				7CE006BD2E80EBE600DDCCD6 /* AppUpdater in Frameworks */,
+				7CF1A1002F4D5C0100FB7CAF /* FluidIntelligence in Frameworks */,
 				7C078DA52E3B386A00FB7CAC /* FluidAudio in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -157,6 +159,7 @@
 				7CE006BC2E80EBE600DDCCD6 /* AppUpdater */,
 				7C1C72F12EECBD1300E3BF4D /* SwiftWhisper */,
 				7C5AF14A2F15041600DE21B0 /* MediaRemoteAdapter */,
+				7CF1A1022F4D5C0100FB7CAF /* FluidIntelligence */,
 			);
 			productName = FluidVoice;
 			productReference = 7C078D8F2E3B339200FB7CAC /* FluidVoice Debug.app */;
@@ -214,6 +217,7 @@
 				7C3697872ED70F9C005874CE /* XCRemoteSwiftPackageReference "DynamicNotchKit" */,
 				7C1C72F02EECBD1300E3BF4D /* XCRemoteSwiftPackageReference "SwiftWhisper" */,
 				7C5AF1492F15041600DE21B0 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */,
+				7CF1A1012F4D5C0100FB7CAF /* XCLocalSwiftPackageReference "../FluidIntelligence" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7C078D902E3B339200FB7CAC /* Products */;
@@ -586,6 +590,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		7CF1A1012F4D5C0100FB7CAF /* XCLocalSwiftPackageReference "../FluidIntelligence" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../FluidIntelligence;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		7C078DA32E3B386A00FB7CAC /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -667,6 +678,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7CE006BB2E80EBE600DDCCD6 /* XCRemoteSwiftPackageReference "AppUpdater" */;
 			productName = AppUpdater;
+		};
+		7CF1A1022F4D5C0100FB7CAF /* FluidIntelligence */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7CF1A1012F4D5C0100FB7CAF /* XCLocalSwiftPackageReference "../FluidIntelligence" */;
+			productName = FluidIntelligence;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
