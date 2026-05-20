@@ -694,10 +694,12 @@ extension AIEnhancementSettingsView {
     private func verifyFluidIntelligenceConnection(_ model: FluidRegisteredModel) {
         self.fluidIntelligenceLoadState = .loading(modelID: model.id)
         Task { @MainActor in
+            let start = ContinuousClock.now
             let verified = await self.viewModel.verifyFluidIntelligence(model: model)
+            let latencyMilliseconds = Self.elapsedMilliseconds(since: start)
             guard self.fluidIntelligenceSelectedModelID == model.id else { return }
             if verified {
-                self.fluidIntelligenceLoadState = .loaded(modelID: model.id)
+                self.fluidIntelligenceLoadState = .loaded(modelID: model.id, latencyMilliseconds: latencyMilliseconds)
             } else {
                 let message = self.viewModel.connectionErrorMessage.isEmpty
                     ? "Model verification failed."
@@ -726,9 +728,10 @@ extension AIEnhancementSettingsView {
         }
 
         if self.fluidIntelligenceLoadState.isLoaded(model.id) {
+            let latency = self.fluidIntelligenceLoadState.latencyMilliseconds(for: model.id)
             return FluidIntelligenceModelStatus(
                 title: "Model loaded",
-                detail: "\(model.displayName) is resident in memory and ready for the next dictation.",
+                detail: "\(model.displayName) loaded\(Self.loadDurationText(latency)) and will stay warm until unloaded or switched.",
                 icon: "memorychip.fill",
                 detailIcon: "checkmark.shield.fill",
                 color: Color.fluidGreen
@@ -806,7 +809,7 @@ extension AIEnhancementSettingsView {
                 return
             }
 
-            self.fluidIntelligenceLoadState = .loaded(modelID: loaded.modelID)
+            self.fluidIntelligenceLoadState = .loaded(modelID: loaded.modelID, latencyMilliseconds: nil)
         }
     }
 
@@ -819,11 +822,13 @@ extension AIEnhancementSettingsView {
         self.fluidIntelligenceLoadState = .loading(modelID: model.id)
         Task { @MainActor in
             do {
+                let start = ContinuousClock.now
                 let status = try await FluidIntelligenceIntegrationService.shared.loadModel(model)
+                let latencyMilliseconds = Self.elapsedMilliseconds(since: start)
                 guard self.fluidIntelligenceSelectedModelID == model.id else { return }
                 switch status.state {
                 case .ready:
-                    self.fluidIntelligenceLoadState = .loaded(modelID: model.id)
+                    self.fluidIntelligenceLoadState = .loaded(modelID: model.id, latencyMilliseconds: latencyMilliseconds)
                 default:
                     self.fluidIntelligenceLoadState = .failed(
                         modelID: model.id,
@@ -856,6 +861,20 @@ extension AIEnhancementSettingsView {
             return description
         }
         return String(describing: error)
+    }
+
+    private static func elapsedMilliseconds(since start: ContinuousClock.Instant) -> Int {
+        let elapsed = start.duration(to: ContinuousClock.now)
+        return Int(elapsed.components.seconds * 1000) + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
+    }
+
+    private static func loadDurationText(_ milliseconds: Int?) -> String {
+        guard let milliseconds else { return "" }
+        if milliseconds >= 1000 {
+            let seconds = Double(milliseconds) / 1000
+            return String(format: " in %.1fs", seconds)
+        }
+        return " in \(milliseconds)ms"
     }
 
     private func persistFluidIntelligenceModelSelection(_ value: String) {
@@ -1196,6 +1215,14 @@ extension AIEnhancementSettingsView {
         let providerKey = self.viewModel.providerKey(for: item.id)
         let models = self.viewModel.availableModelsByProvider[providerKey] ?? []
         let isSelected = item.id == self.viewModel.selectedProviderID
+        let isFluidIntelligence = item.id == "fluid-1"
+        let fluidModel = self.selectedFluidIntelligenceModel
+        let fluidStatus = self.fluidIntelligenceModelStatus(for: fluidModel)
+        let isFluidInstalled = FluidIntelligenceIntegrationService.isModelInstalled(fluidModel)
+        let isFluidLoading = self.fluidIntelligenceLoadState.isLoading(fluidModel.id)
+        let isFluidLoaded = self.fluidIntelligenceLoadState.isLoaded(fluidModel.id)
+        let hasFluidLoadFailure = self.fluidIntelligenceLoadState.failureMessage(for: fluidModel.id) != nil
+        let isFluidTesting = self.viewModel.isTestingConnection && self.viewModel.selectedProviderID == "fluid-1"
         let isRefreshing = self.viewModel.isFetchingModels && self.viewModel.selectedProviderID == item.id
         let baseURL = self.providerBaseURL(for: item).trimmingCharacters(in: .whitespacesAndNewlines)
         let isLocal = self.viewModel.isLocalEndpoint(baseURL)
@@ -1233,37 +1260,89 @@ extension AIEnhancementSettingsView {
                 Spacer()
 
                 SearchableModelPicker(
-                    models: models,
-                    selectedModel: self.modelBinding(for: item.id),
+                    models: isFluidIntelligence ? FluidModelRegistry.modelIDs() : models,
+                    selectedModel: isFluidIntelligence ? self.fluidIntelligenceModelBinding : self.modelBinding(for: item.id),
                     onRefresh: {
-                        self.activateProvider(item.id)
-                        await self.viewModel.fetchModelsForCurrentProvider()
+                        if isFluidIntelligence {
+                            await MainActor.run {
+                                self.refreshFluidIntelligenceProviderModels()
+                            }
+                        } else {
+                            self.activateProvider(item.id)
+                            await self.viewModel.fetchModelsForCurrentProvider()
+                        }
                     },
                     isRefreshing: isRefreshing,
-                    refreshEnabled: canFetchModels,
-                    selectionEnabled: hasModels,
+                    refreshEnabled: isFluidIntelligence ? true : canFetchModels,
+                    selectionEnabled: isFluidIntelligence ? (!isFluidLoading && !isFluidTesting) : hasModels,
                     controlWidth: 180,
                     controlHeight: 28
                 )
 
-                self.reasoningButton(for: item.id)
-
-                Button("Edit") {
-                    self.activateProvider(item.id)
-                    if isEditing {
-                        self.viewModel.showingEditProvider = false
-                        self.viewModel.editProviderName = ""
-                        self.viewModel.editProviderBaseURL = ""
-                        self.viewModel.setEditingAPIKey(false, for: item.id)
-                    } else {
-                        self.viewModel.startEditingProvider()
-                        self.viewModel.setEditingAPIKey(true, for: item.id)
+                if isFluidIntelligence {
+                    Button(action: { self.loadFluidIntelligenceModel(fluidModel) }) {
+                        if isFluidLoading {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .fixedSize()
+                        } else {
+                            Image(systemName: "memorychip")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
                     }
+                    .buttonStyle(CompactButtonStyle(foreground: isFluidLoaded ? Color.fluidGreen : nil))
+                    .frame(width: 28, height: 28)
+                    .disabled(!isFluidInstalled || isFluidLoading || isFluidTesting)
+                    .help("Load selected model")
+
+                    Button(action: { self.unloadFluidIntelligenceModel() }) {
+                        Image(systemName: "eject")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(CompactButtonStyle())
+                    .frame(width: 28, height: 28)
+                    .disabled(isFluidLoading || isFluidTesting || !isFluidLoaded)
+                    .help("Unload selected model")
+
+                    Button(action: { self.revealFluidIntelligenceModelFolder() }) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(CompactButtonStyle())
+                    .frame(width: 28, height: 28)
+                    .help("Open models folder")
+                } else {
+                    self.reasoningButton(for: item.id)
+
+                    Button("Edit") {
+                        self.activateProvider(item.id)
+                        if isEditing {
+                            self.viewModel.showingEditProvider = false
+                            self.viewModel.editProviderName = ""
+                            self.viewModel.editProviderBaseURL = ""
+                            self.viewModel.setEditingAPIKey(false, for: item.id)
+                        } else {
+                            self.viewModel.startEditingProvider()
+                            self.viewModel.setEditingAPIKey(true, for: item.id)
+                        }
+                    }
+                    .buttonStyle(CompactButtonStyle())
                 }
-                .buttonStyle(CompactButtonStyle())
             }
 
-            if isEditing {
+            if isFluidIntelligence, isFluidLoading || isFluidLoaded || hasFluidLoadFailure {
+                HStack(spacing: 6) {
+                    Image(systemName: fluidStatus.detailIcon)
+                        .font(.caption)
+                    Text(fluidStatus.detail)
+                        .font(.caption)
+                        .lineLimit(2)
+                }
+                .foregroundStyle(fluidStatus.color)
+                .padding(.top, 8)
+            }
+
+            if !isFluidIntelligence, isEditing {
                 Divider()
                     .background(self.theme.palette.separator.opacity(0.5))
                     .padding(.vertical, 10)
@@ -1271,7 +1350,10 @@ extension AIEnhancementSettingsView {
                 self.editProviderSection
             }
 
-            if self.viewModel.showingReasoningConfig && self.viewModel.selectedProviderID == item.id {
+            if !isFluidIntelligence,
+               self.viewModel.showingReasoningConfig,
+               self.viewModel.selectedProviderID == item.id
+            {
                 Divider()
                     .background(self.theme.palette.separator.opacity(0.5))
                     .padding(.vertical, 10)

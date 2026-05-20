@@ -3,7 +3,7 @@ import SwiftUI
 enum FluidIntelligenceModelLoadState: Equatable {
     case idle
     case loading(modelID: String)
-    case loaded(modelID: String)
+    case loaded(modelID: String, latencyMilliseconds: Int?)
     case failed(modelID: String, message: String)
 
     func isLoading(_ modelID: String) -> Bool {
@@ -12,8 +12,15 @@ enum FluidIntelligenceModelLoadState: Equatable {
     }
 
     func isLoaded(_ modelID: String) -> Bool {
-        if case .loaded(modelID) = self { return true }
+        if case .loaded(modelID, _) = self { return true }
         return false
+    }
+
+    func latencyMilliseconds(for modelID: String) -> Int? {
+        if case let .loaded(loadedModelID, latencyMilliseconds) = self, loadedModelID == modelID {
+            return latencyMilliseconds
+        }
+        return nil
     }
 
     func failureMessage(for modelID: String) -> String? {
