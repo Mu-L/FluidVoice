@@ -36,11 +36,18 @@ final class DictationPostProcessingService {
             source: "DictationPostProcessingService"
         )
 
+        let usesPrivateAISelection = settings.dictationPromptSelection(for: dictationSlot) == .privateAI
         let isPrivateAIProvider = resolved.providerID == PrivateAIProviderFeature.shared.providerID ||
             resolved.providerKey == PrivateAIProviderFeature.shared.providerID ||
             resolved.providerKey == "custom:\(PrivateAIProviderFeature.shared.providerID)"
 
-        if isPrivateAIProvider || PrivateAIIntegrationService.shouldHandleDictation(model: resolved.model) {
+        guard usesPrivateAISelection || !isPrivateAIProvider else {
+            throw AIProcessingError.noVerifiedProvider
+        }
+
+        if usesPrivateAISelection,
+           isPrivateAIProvider || PrivateAIIntegrationService.shouldHandleDictation(model: resolved.model)
+        {
             let response = try await PrivateAIIntegrationService.shared.enhanceDictation(
                 trimmed,
                 runtime: PrivateAIIntegrationService.RuntimeConfiguration(

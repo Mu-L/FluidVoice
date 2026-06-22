@@ -12,7 +12,8 @@ enum DictationAIPostProcessingGate {
 
     static func isConfigured(for slot: SettingsStore.DictationShortcutSlot, appBundleID: String? = nil) -> Bool {
         let settings = SettingsStore.shared
-        guard settings.dictationPromptSelection(for: slot) != .off else { return false }
+        let promptSelection = settings.dictationPromptSelection(for: slot)
+        guard promptSelection != .off else { return false }
         if let appBundleID,
            settings.promptRoutingScope(for: .dictate) == .selectedAppsOnly,
            !settings.hasAppPromptBinding(for: .dictate, appBundleID: appBundleID)
@@ -20,9 +21,11 @@ enum DictationAIPostProcessingGate {
             return false
         }
 
-        if PrivateAIProviderPromptFormat.isAvailable(settings: settings) {
+        if promptSelection == .privateAI {
             return self.isPrivateProviderConfigured(settings: settings)
         }
+
+        if self.isSelectedPrivateProvider(settings: settings) { return false }
 
         return self.isProviderConfigured()
     }
@@ -84,6 +87,11 @@ enum DictationAIPostProcessingGate {
 
     private static func isPrivateProviderConfigured(settings: SettingsStore) -> Bool {
         PrivateAIProviderPromptFormat.verifiedModelID(settings: settings) != nil
+    }
+
+    private static func isSelectedPrivateProvider(settings: SettingsStore) -> Bool {
+        PrivateFeatures.privateAIProvider &&
+            settings.selectedProviderID == PrivateAIProviderFeature.shared.providerID
     }
 
     static func isLocalEndpoint(_ urlString: String) -> Bool {

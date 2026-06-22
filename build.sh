@@ -1,30 +1,36 @@
 #!/bin/bash
 
 # FluidVoice Build Profile Router
-# Routes to existing scripts without changing build_dev.sh behavior.
+# Defaults to the private Fluid Intelligence build for local development.
 #
 # Usage:
-#   ./build.sh                    # dev/full-compatible path (build_dev.sh)
-#   ./build.sh dev                # same as above
-#   ./build.sh full               # same as above
-#   ./build.sh incremental        # fast local loop (build_incremental.sh)
-#   BUILD_PROFILE=incremental ./build.sh
+#   ./build.sh                    # private FI build
+#   ./build.sh fi                 # private FI build
 
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROFILE="${1:-${BUILD_PROFILE:-dev}}"
+PROFILE="${1:-${BUILD_PROFILE:-fi}}"
+PRIVATE_FI_BUILD_SCRIPT="${PROJECT_DIR}/build_with_FI_incremental.sh"
 
 case "${PROFILE}" in
-    dev|full)
-        exec "${PROJECT_DIR}/build_dev.sh"
+    fi|private|dev|full)
+        if [ ! -x "${PRIVATE_FI_BUILD_SCRIPT}" ]; then
+            echo "Private Fluid Intelligence build script is missing:"
+            echo "  ${PRIVATE_FI_BUILD_SCRIPT}"
+            echo "Restore the private FI build setup, then run: sh build_with_FI_incremental.sh"
+            exit 1
+        fi
+        exec "${PRIVATE_FI_BUILD_SCRIPT}"
         ;;
-    incremental|fast)
-        exec "${PROJECT_DIR}/build_incremental.sh"
+    public|oss|incremental|fast)
+        echo "Public/OSS builds are not available from this repo entrypoint."
+        echo "Use the private Fluid Intelligence build: sh build_with_FI_incremental.sh"
+        exit 1
         ;;
     *)
         echo "Unknown build profile: ${PROFILE}"
-        echo "Valid profiles: dev, full, incremental (or fast)"
+        echo "Valid profiles: fi/private/dev/full"
         exit 1
         ;;
 esac

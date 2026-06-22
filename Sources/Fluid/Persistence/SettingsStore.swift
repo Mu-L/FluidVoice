@@ -32,6 +32,7 @@ final class SettingsStore: ObservableObject {
         self.migrateSecondaryPromptShortcutIfNeeded()
         self.normalizePromptSelectionsIfNeeded()
         self.normalizeProviderSelectionForCurrentVerificationState()
+        self.enforceOnboardingGenerationIfNeeded()
         self.migrateOverlayBottomOffsetTo50IfNeeded()
         self.refreshLaunchAtStartupStatus(clearError: true, logMismatch: false)
     }
@@ -1384,26 +1385,14 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    /// No-op: never override the user's provider selection on launch.
+    ///
+    /// The per-prompt shortcut system means the global default provider is no longer the
+    /// authoritative routing source — each shortcut can bind to its own provider/model, or be off.
+    /// The only time we set a provider is during onboarding (Fluid Intelligence flow); after that
+    /// the selection is sticky across restarts and updates. Default is off (empty).
     func normalizeProviderSelectionForCurrentVerificationState() {
-        let currentProviderID = self.selectedProviderID
-        if self.isVerifiedProviderForCurrentConfiguration(currentProviderID) {
-            self.syncLinkedProviderSelections(to: currentProviderID)
-            return
-        }
-
-        let verifiedProviderIDs = self.verifiedProviderIDsForCurrentConfiguration()
-        guard verifiedProviderIDs.count == 1,
-              let providerID = verifiedProviderIDs.first
-        else {
-            if currentProviderID.isEmpty {
-                self.selectedProviderID = ""
-                self.syncLinkedProviderSelections(to: "")
-            }
-            return
-        }
-
-        self.selectedProviderID = providerID
-        self.syncLinkedProviderSelections(to: providerID)
+        // Intentionally empty. Selection is sticky.
     }
 
     var privateAIPrefixKVCacheEnabled: Bool {
@@ -2045,6 +2034,27 @@ final class SettingsStore: ObservableObject {
         set { self.defaults.set(newValue, forKey: Keys.playgroundUsed) }
     }
 
+    /// Bump this when shipping a version that should force all users (new + existing) through
+    /// onboarding again. The user's stored generation is compared on init; if it's below this
+    /// value, onboarding is reset. Each forced ship increments this by 1.
+    private static let currentOnboardingGeneration: Int = 2
+
+    /// Force onboarding reset for users whose stored generation is below the current one.
+    /// Called during init() so it takes effect before any UI decision.
+    private func enforceOnboardingGenerationIfNeeded() {
+        let storedGeneration = self.defaults.integer(forKey: Keys.onboardingGeneration)
+        guard storedGeneration < Self.currentOnboardingGeneration else { return }
+
+        // Reset onboarding state and bump the stored generation so this is a one-time reset.
+        objectWillChange.send()
+        self.defaults.set(false, forKey: Keys.onboardingCompleted)
+        self.defaults.set(0, forKey: Keys.onboardingCurrentStep)
+        self.defaults.set(false, forKey: Keys.onboardingAISkipped)
+        self.defaults.set(false, forKey: Keys.onboardingPlaygroundValidated)
+        self.defaults.set(false, forKey: Keys.onboardingPlaygroundSkipped)
+        self.defaults.set(Self.currentOnboardingGeneration, forKey: Keys.onboardingGeneration)
+    }
+
     var onboardingCompleted: Bool {
         get {
             if self.defaults.object(forKey: Keys.onboardingCompleted) == nil {
@@ -2055,6 +2065,9 @@ final class SettingsStore: ObservableObject {
         set {
             objectWillChange.send()
             self.defaults.set(newValue, forKey: Keys.onboardingCompleted)
+            if newValue {
+                self.defaults.set(Self.currentOnboardingGeneration, forKey: Keys.onboardingGeneration)
+            }
         }
     }
 
@@ -2168,6 +2181,7 @@ final class SettingsStore: ObservableObject {
     func resetOnboardingProgress() {
         objectWillChange.send()
         self.defaults.set(false, forKey: Keys.onboardingCompleted)
+        self.defaults.set(Self.currentOnboardingGeneration, forKey: Keys.onboardingGeneration)
         self.defaults.set(0, forKey: Keys.onboardingCurrentStep)
         self.defaults.set(false, forKey: Keys.onboardingAISkipped)
         self.defaults.set(false, forKey: Keys.onboardingPlaygroundValidated)
@@ -2940,7 +2954,10 @@ final class SettingsStore: ObservableObject {
             self.dictationPromptProfiles = normalizedProfiles
         }
 
+        let privateAIPromptID = PrivateAIProviderPromptFormat.promptSelectionID
+
         if let id = self.selectedDictationPromptID,
+           !(PrivateFeatures.privateAIProvider && id == privateAIPromptID),
            self.dictationPromptProfiles.contains(where: { $0.id == id && $0.mode == .dictate }) == false
         {
             self.selectedDictationPromptID = nil
@@ -2953,6 +2970,7 @@ final class SettingsStore: ObservableObject {
         }
 
         if let id = self.promptModeSelectedPromptID,
+           !(PrivateFeatures.privateAIProvider && id == privateAIPromptID),
            self.dictationPromptProfiles.contains(where: { $0.id == id && $0.mode.normalized == .dictate }) == false
         {
             self.promptModeSelectedPromptID = nil
@@ -4137,6 +4155,7 @@ private extension SettingsStore {
         static let snoozedUpdateVersion = "SnoozedUpdateVersion"
         static let playgroundUsed = "PlaygroundUsed"
         static let onboardingCompleted = "OnboardingCompleted"
+        static let onboardingGeneration = "OnboardingGeneration"
         static let onboardingCurrentStep = "OnboardingCurrentStep"
         static let onboardingAISkipped = "OnboardingAISkipped"
         static let onboardingPlaygroundValidated = "OnboardingPlaygroundValidated"

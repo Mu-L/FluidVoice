@@ -653,9 +653,9 @@ private struct TranscriptionFeedbackReportSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Report bad result")
+                Text("Share anonymous datapoint")
                     .font(.system(size: 18, weight: .semibold))
-                Text("Review or edit what would be sent. Nothing is uploaded yet.")
+                Text("Help improve our model. Only the example shown below will be sent.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -691,7 +691,7 @@ private struct TranscriptionFeedbackReportSheet: View {
                                 .controlSize(.small)
                                 .fixedSize()
                         }
-                        Text(self.isSending ? "Sending..." : "Send")
+                        Text(self.isSending ? "Sending..." : "Send Example")
                     }
                 }
                 .keyboardShortcut(.defaultAction)

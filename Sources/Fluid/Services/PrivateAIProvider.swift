@@ -38,6 +38,13 @@ struct PrivateAIModelDownloadProgress: Sendable, Equatable {
         return min(1, max(0, Double(self.totalBytesWritten) / Double(totalBytesExpected)))
     }
 
+    /// All expected bytes have been written. The download itself is done; the
+    /// provider is now validating (SHA-256) and moving the file into place.
+    var isComplete: Bool {
+        guard let totalBytesExpected, totalBytesExpected > 0 else { return false }
+        return self.totalBytesWritten >= totalBytesExpected
+    }
+
     func withFallbackExpectedBytes(_ byteCount: Int64?) -> PrivateAIModelDownloadProgress {
         guard self.totalBytesExpected == nil,
               let byteCount,
@@ -56,6 +63,7 @@ struct PrivateAIModelDownloadProgress: Sendable, Equatable {
 
 enum PrivateAIModelDownloadProgressText {
     static func buttonTitle(for progress: PrivateAIModelDownloadProgress?) -> String {
+        if progress?.isComplete == true { return "Verifying" }
         guard let fraction = progress?.fractionCompleted else { return "Downloading" }
         return "Downloading \(Int(fraction * 100))%"
     }
@@ -63,6 +71,9 @@ enum PrivateAIModelDownloadProgressText {
     static func statusText(for progress: PrivateAIModelDownloadProgress?) -> String {
         guard let progress else {
             return "Starting download. This can take a few minutes."
+        }
+        if progress.isComplete {
+            return "Verifying download. This can take a moment."
         }
         guard progress.hasWrittenBytes else {
             return "Downloading. This can take a few minutes."
@@ -75,6 +86,10 @@ enum PrivateAIModelDownloadProgressText {
 
     static func byteText(for progress: PrivateAIModelDownloadProgress?) -> String? {
         guard let progress else { return nil }
+
+        if progress.isComplete {
+            return "\(Self.byteCountText(progress.totalBytesWritten)) downloaded"
+        }
 
         guard progress.hasWrittenBytes else {
             guard let expected = progress.totalBytesExpected, expected > 0 else { return nil }
@@ -91,6 +106,9 @@ enum PrivateAIModelDownloadProgressText {
 
     static func detailText(for progress: PrivateAIModelDownloadProgress?) -> String {
         guard let progress else { return "Starting download..." }
+        if progress.isComplete {
+            return "Verifying download..."
+        }
         guard let byteText = Self.byteText(for: progress) else { return "Downloading..." }
         guard progress.hasWrittenBytes else { return byteText }
         guard let fraction = progress.fractionCompleted else { return byteText }

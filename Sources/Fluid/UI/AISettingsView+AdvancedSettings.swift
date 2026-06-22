@@ -1635,15 +1635,15 @@ extension AIEnhancementSettingsView {
                         }
                     }())
                         .font(.headline)
-                    Text(mode.isPrivateAI
-                        ? "Built-in system prompt. Only the shortcut can be customized."
-                        : (mode.isDefault
-                            ? "This is the built-in prompt. Create a custom prompt to override it."
-                            : "Prompt text is appended to the hidden base prompt for the selected mode."
-                        )
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    if mode.isPrivateAI {
+                        Text("Built-in system prompt. Only the shortcut can be customized.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if mode.isDefault {
+                        Text("This is the built-in prompt. Create a custom prompt to override it.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
             }
