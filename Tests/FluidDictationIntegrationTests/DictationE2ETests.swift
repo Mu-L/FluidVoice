@@ -36,6 +36,42 @@ final class DictationE2ETests: XCTestCase {
 
     private let verifiedProviderFingerprintsKey = "VerifiedProviderFingerprints"
 
+    func testTranscriptionHistoryEntryClipboardTextPrefersProcessedText() {
+        let entry = TranscriptionHistoryEntry(
+            rawText: " raw transcript ",
+            processedText: " processed transcript ",
+            appName: "Notes",
+            windowTitle: "Draft",
+            wasAIProcessed: true
+        )
+
+        XCTAssertEqual(entry.clipboardText, "processed transcript")
+    }
+
+    func testTranscriptionHistoryEntryClipboardTextFallsBackToRawText() {
+        let entry = TranscriptionHistoryEntry(
+            rawText: " raw transcript ",
+            processedText: "   ",
+            appName: "Notes",
+            windowTitle: "Draft",
+            wasAIProcessed: false
+        )
+
+        XCTAssertEqual(entry.clipboardText, "raw transcript")
+    }
+
+    func testTranscriptionHistoryEntryClipboardTextSkipsEmptyText() {
+        let entry = TranscriptionHistoryEntry(
+            rawText: "   ",
+            processedText: "   ",
+            appName: "Notes",
+            windowTitle: "Draft",
+            wasAIProcessed: false
+        )
+
+        XCTAssertNil(entry.clipboardText)
+    }
+
     func testTranscriptionStartSound_noneOptionHasNoFile() {
         XCTAssertEqual(SettingsStore.TranscriptionStartSound.none.displayName, "None")
         XCTAssertNil(SettingsStore.TranscriptionStartSound.none.startSoundFileName)
