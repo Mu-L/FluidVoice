@@ -15,6 +15,12 @@ final class SettingsStore: ObservableObject {
     static let transcriptionPreviewCharLimitRange: ClosedRange<Int> = 50...800
     static let transcriptionPreviewCharLimitStep = 50
     static let defaultTranscriptionPreviewCharLimit = 150
+    static let privateAIContextTokenLimitRange: ClosedRange<Int> = 2048...8192
+    static let privateAIContextTokenLimitStep = 512
+    static let defaultPrivateAIContextTokenLimit = 4096
+    static let privateAIDictationSystemOverheadTokens = 1280
+    static let privateAIDictationMinimumOutputTokens = 256
+    static let privateAIDictationRoundTripTokenCost = 2.75
     private let defaults = UserDefaults.standard
     private let keychain = KeychainService.shared
     private(set) var launchAtStartupEnabled = false
@@ -35,7 +41,32 @@ final class SettingsStore: ObservableObject {
         self.normalizeProviderSelectionForCurrentVerificationState()
         self.enforceOnboardingGenerationIfNeeded()
         self.migrateOverlayBottomOffsetTo50IfNeeded()
+        self.migratePrivateAIContextDefaultTo4KIfNeeded()
         self.refreshLaunchAtStartupStatus(clearError: true, logMismatch: false)
+    }
+
+    static func clampPrivateAIContextTokenLimit(_ value: Int) -> Int {
+        min(max(value, self.privateAIContextTokenLimitRange.lowerBound), self.privateAIContextTokenLimitRange.upperBound)
+    }
+
+    static func estimatedPrivateAIDictationWords(for contextTokenLimit: Int) -> Int {
+        let availableTokens = max(0, Self.clampPrivateAIContextTokenLimit(contextTokenLimit) - Self.privateAIDictationSystemOverheadTokens)
+        let inputTokens = Double(availableTokens) / Self.privateAIDictationRoundTripTokenCost
+        return max(100, Int((inputTokens * 0.75 / 50).rounded(.up)) * 50)
+    }
+
+    static func privateAIMaxOutputTokens(forInputText inputText: String, contextTokenLimit: Int) -> Int {
+        let wordCount = inputText.split { $0.isWhitespace || $0.isNewline }.count
+        let estimatedInputTokens = max(1, Int((Double(wordCount) / 0.75).rounded(.up)))
+        let requestedOutputTokens = max(
+            Self.privateAIDictationMinimumOutputTokens,
+            Int((Double(estimatedInputTokens) * 1.15).rounded(.up)) + 64
+        )
+        let availableOutputTokens = max(
+            Self.privateAIDictationMinimumOutputTokens,
+            Self.clampPrivateAIContextTokenLimit(contextTokenLimit) - Self.privateAIDictationSystemOverheadTokens - estimatedInputTokens
+        )
+        return min(requestedOutputTokens, availableOutputTokens)
     }
 
     // MARK: - Prompt Profiles (Unified)
@@ -1406,6 +1437,34 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    var privateAIBoostEnabled: Bool {
+        get { self.defaults.object(forKey: PrivateAIProviderFeature.shared.boostDefaultsKey) as? Bool ?? true }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: PrivateAIProviderFeature.shared.boostDefaultsKey)
+        }
+    }
+
+    var privateAIContextTokenLimit: Int {
+        get {
+            let value = self.defaults.integer(forKey: Keys.privateAIContextTokenLimit)
+            return Self.clampPrivateAIContextTokenLimit(value == 0 ? Self.defaultPrivateAIContextTokenLimit : value)
+        }
+        set {
+            objectWillChange.send()
+            self.defaults.set(Self.clampPrivateAIContextTokenLimit(newValue), forKey: Keys.privateAIContextTokenLimit)
+        }
+    }
+
+    private func migratePrivateAIContextDefaultTo4KIfNeeded() {
+        guard self.defaults.bool(forKey: Keys.privateAIContextDefaultMigratedTo4K) == false else { return }
+        let storedValue = self.defaults.object(forKey: Keys.privateAIContextTokenLimit) as? Int
+        if storedValue == nil || storedValue == Self.privateAIContextTokenLimitRange.lowerBound {
+            self.defaults.set(Self.defaultPrivateAIContextTokenLimit, forKey: Keys.privateAIContextTokenLimit)
+        }
+        self.defaults.set(true, forKey: Keys.privateAIContextDefaultMigratedTo4K)
+    }
+
     var savedProviders: [SavedProvider] {
         get {
             guard let data = defaults.data(forKey: Keys.savedProviders),
@@ -2740,6 +2799,8 @@ final class SettingsStore: ObservableObject {
             savedProviders: self.savedProviders,
             modelReasoningConfigs: self.modelReasoningConfigs,
             privateAIPrefixKVCacheEnabled: self.privateAIPrefixKVCacheEnabled,
+            privateAIBoostEnabled: self.privateAIBoostEnabled,
+            privateAIContextTokenLimit: self.privateAIContextTokenLimit,
             selectedSpeechModel: self.selectedSpeechModel,
             selectedCohereLanguage: self.selectedCohereLanguage,
             selectedNemotronLanguage: self.selectedNemotronLanguage,
@@ -2831,6 +2892,12 @@ final class SettingsStore: ObservableObject {
         self.modelReasoningConfigs = payload.modelReasoningConfigs
         if let privateAIPrefixKVCacheEnabled = payload.privateAIPrefixKVCacheEnabled {
             self.privateAIPrefixKVCacheEnabled = privateAIPrefixKVCacheEnabled
+        }
+        if let privateAIBoostEnabled = payload.privateAIBoostEnabled {
+            self.privateAIBoostEnabled = privateAIBoostEnabled
+        }
+        if let privateAIContextTokenLimit = payload.privateAIContextTokenLimit {
+            self.privateAIContextTokenLimit = privateAIContextTokenLimit
         }
         self.selectedSpeechModel = payload.selectedSpeechModel
         self.selectedCohereLanguage = payload.selectedCohereLanguage
@@ -4367,6 +4434,9 @@ private extension SettingsStore {
         static let selectedModelByProvider = "SelectedModelByProvider"
         static let selectedProviderID = "SelectedProviderID"
         static let privateAIPrefixKVCacheEnabled = "PrivateAIProviderPrefixKVCacheEnabled"
+        static let privateAIBoostEnabled = "PrivateAIProviderBoostEnabled"
+        static let privateAIContextTokenLimit = "PrivateAIProviderContextTokenLimit"
+        static let privateAIContextDefaultMigratedTo4K = "PrivateAIProviderContextDefaultMigratedTo4K"
         static let providerAPIKeys = "ProviderAPIKeys"
         static let providerAPIKeyIdentifiers = "ProviderAPIKeyIdentifiers"
         static let savedProviders = "SavedProviders"

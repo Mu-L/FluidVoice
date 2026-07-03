@@ -34,6 +34,13 @@ final class DictationE2ETests: XCTestCase {
         PrivateAIProviderFeature.shared.prefixCacheDefaultsKey
     }
 
+    private var privateAIBoostEnabledKey: String {
+        PrivateAIProviderFeature.shared.boostDefaultsKey
+    }
+
+    private let privateAIContextTokenLimitKey = "PrivateAIProviderContextTokenLimit"
+    private let privateAIContextDefaultMigratedTo4KKey = "PrivateAIProviderContextDefaultMigratedTo4K"
+
     private let verifiedProviderFingerprintsKey = "VerifiedProviderFingerprints"
 
     func testTranscriptionStartSound_noneOptionHasNoFile() {
@@ -706,6 +713,39 @@ final class DictationE2ETests: XCTestCase {
 
             settings.privateAIPrefixKVCacheEnabled = true
             XCTAssertTrue(settings.privateAIPrefixKVCacheEnabled)
+        }
+    }
+
+    func testPrivateAIProviderBoost_defaultsOnAndPersistsToggle() {
+        self.withRestoredDefaults(keys: [self.privateAIBoostEnabledKey]) {
+            let settings = SettingsStore.shared
+
+            XCTAssertTrue(settings.privateAIBoostEnabled)
+
+            settings.privateAIBoostEnabled = false
+            XCTAssertFalse(settings.privateAIBoostEnabled)
+
+            settings.privateAIBoostEnabled = true
+            XCTAssertTrue(settings.privateAIBoostEnabled)
+        }
+    }
+
+    func testPrivateAIProviderContextTokenLimit_defaultsPersistsAndClamps() {
+        self.withRestoredDefaults(keys: [self.privateAIContextTokenLimitKey, self.privateAIContextDefaultMigratedTo4KKey]) {
+            let settings = SettingsStore.shared
+            UserDefaults.standard.removeObject(forKey: self.privateAIContextTokenLimitKey)
+            UserDefaults.standard.removeObject(forKey: self.privateAIContextDefaultMigratedTo4KKey)
+
+            XCTAssertEqual(settings.privateAIContextTokenLimit, 4096)
+
+            settings.privateAIContextTokenLimit = 4096
+            XCTAssertEqual(settings.privateAIContextTokenLimit, 4096)
+
+            settings.privateAIContextTokenLimit = 1024
+            XCTAssertEqual(settings.privateAIContextTokenLimit, 2048)
+
+            settings.privateAIContextTokenLimit = 16_384
+            XCTAssertEqual(settings.privateAIContextTokenLimit, 8192)
         }
     }
 

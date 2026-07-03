@@ -1832,7 +1832,9 @@ struct ContentView: View {
                     model: derivedSelectedModel,
                     apiKey: apiKey,
                     localModelPath: PrivateAIIntegrationService.configuredLocalModelPath,
-                    usesStablePromptPrefixKVCache: SettingsStore.shared.privateAIPrefixKVCacheEnabled
+                    usesStablePromptPrefixKVCache: SettingsStore.shared.privateAIPrefixKVCacheEnabled,
+                    usesFluid1Boost: SettingsStore.shared.privateAIBoostEnabled,
+                    contextTokenLimit: SettingsStore.shared.privateAIContextTokenLimit
                 ),
                 context: PrivateAIIntegrationService.AppContext(
                     appName: appInfo.name,
