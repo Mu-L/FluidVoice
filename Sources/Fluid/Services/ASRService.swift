@@ -728,7 +728,7 @@ final class ASRService: ObservableObject {
     }
 
     private func resolvedInputDeviceForCapture() -> AudioDevice.Device? {
-        if SettingsStore.shared.syncAudioDevicesWithSystem == false,
+        if SettingsStore.shared.microphoneSelectionMode == .manual,
            let preferredUID = SettingsStore.shared.preferredInputDeviceUID,
            preferredUID.isEmpty == false,
            let preferredDevice = AudioDevice.getInputDevice(byUID: preferredUID)
@@ -1341,18 +1341,15 @@ final class ASRService: ObservableObject {
         self.isDictionaryTrainingCaptureActive = false
 
         do {
+            if SettingsStore.shared.microphoneSelectionMode == .manual {
+                AppServices.shared.microphonePreferenceCoordinator.enforcePreferredInput(reason: "recording start")
+            }
+
             try self.startPreferredAudioCapture()
             self.isDictionaryTrainingCaptureActive = forDictionaryTraining
             self.isRunning = true
             DebugLogger.shared.info("✅ Audio capture running", source: "ASRService")
             onCaptureStarted?()
-            if SettingsStore.shared.microphoneSelectionMode == .manual {
-                AppServices.shared.microphonePreferenceCoordinator.enforcePreferredInput(reason: "recording start")
-            }
-
-            DebugLogger.shared.debug("⚙️ Calling configureSession()...", source: "ASRService")
-            try self.configureSession()
-            DebugLogger.shared.debug("✅ configureSession() completed", source: "ASRService")
 
             // Pause only after capture is live so media control cannot delay the
             // first PCM packet. A quick stop while this await is in flight is
@@ -2399,11 +2396,6 @@ final class ASRService: ObservableObject {
     }
 
     private func handleDefaultOutputChanged() {
-        guard SettingsStore.shared.syncAudioDevicesWithSystem else {
-            DebugLogger.shared.debug("Ignoring system default output change (sync disabled)", source: "ASRService")
-            return
-        }
-
         // Input-only direct capture has no output device dependency.
         if self.directAudioInput != nil {
             return
