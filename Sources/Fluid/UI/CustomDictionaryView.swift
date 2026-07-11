@@ -33,6 +33,8 @@ struct CustomDictionaryView: View {
 
     @State private var trainingReplacement = ""
     @State private var trainingVariants: [String] = []
+    @State private var pronunciationMatchingEnabled = SettingsStore.shared.pronunciationMatchingEnabled
+    @State private var trainingPronunciationEnrollments: [PronunciationEnrollmentCapture] = []
     @State private var trainingSampleCount = 0
     @State private var lastTrainingOutput = ""
     @State private var lastTrainingOutputIsCovered = false
@@ -86,13 +88,23 @@ struct CustomDictionaryView: View {
     }
 
     private var trainingFinalOutputIsReady: Bool {
-        !self.trainingAlreadyCorrectWithoutReplacement &&
+        if self.pronunciationMatchingEnabled {
+            return !self.trainingAlreadyCorrectWithoutReplacement &&
+                self.trainingPronunciationEnrollments.count >= CustomDictionaryTrainingMerge.readyCoveredCount
+        }
+        return !self.trainingAlreadyCorrectWithoutReplacement &&
             self.trainingOutputIsCovered &&
             self.consecutiveCoveredCaptures >= CustomDictionaryTrainingMerge.readyCoveredCount
     }
 
     private var trainingAlreadyCorrectWithoutReplacement: Bool {
-        self.trainingVariants.isEmpty &&
+        if self.pronunciationMatchingEnabled {
+            return self.trainingVariants.isEmpty &&
+                !self.lastTrainingOutput.isEmpty &&
+                self.lastTrainingOutput.caseInsensitiveCompare(self.normalizedTrainingReplacement) == .orderedSame &&
+                self.trainingPronunciationEnrollments.count >= CustomDictionaryTrainingMerge.readyCoveredCount
+        }
+        return self.trainingVariants.isEmpty &&
             self.trainingOutputIsCovered &&
             !self.lastTrainingOutput.isEmpty &&
             self.lastTrainingOutput.caseInsensitiveCompare(self.normalizedTrainingReplacement) == .orderedSame &&
@@ -100,6 +112,9 @@ struct CustomDictionaryView: View {
     }
 
     private var trainingReadinessProgress: Int {
+        if self.pronunciationMatchingEnabled {
+            return min(self.trainingPronunciationEnrollments.count, CustomDictionaryTrainingMerge.readyCoveredCount)
+        }
         guard !self.trainingAlreadyCorrectWithoutReplacement else {
             return CustomDictionaryTrainingMerge.readyCoveredCount
         }
@@ -108,7 +123,10 @@ struct CustomDictionaryView: View {
     }
 
     private var trainingOutputIsCovered: Bool {
-        self.lastTrainingOutputIsCovered
+        if self.pronunciationMatchingEnabled {
+            return !self.trainingPronunciationEnrollments.isEmpty
+        }
+        return self.lastTrainingOutputIsCovered
     }
 
     private var trainingFinalOutputText: String {
@@ -135,18 +153,10 @@ struct CustomDictionaryView: View {
 
     private var canAddTrainedReplacement: Bool {
         !self.normalizedTrainingReplacement.isEmpty &&
-            !self.trainingVariants.isEmpty &&
+            (!self.trainingVariants.isEmpty || !self.trainingPronunciationEnrollments.isEmpty) &&
             !self.isTrainingRecording &&
             !self.isTrainingProcessing &&
             self.trainingFinalOutputIsReady
-    }
-
-    private var trainedReplacementButtonTitle: String {
-        self.trainingAlreadyCorrectWithoutReplacement ? "No Replacement Needed" : "Add Replacement"
-    }
-
-    private var shouldEmphasizeTrainedReplacementButton: Bool {
-        self.trainingFinalOutputIsReady && self.canAddTrainedReplacement
     }
 
     private var shouldPulseTrainedReplacementButton: Bool {
@@ -247,6 +257,12 @@ struct CustomDictionaryView: View {
                 if let index = self.entries.firstIndex(where: { $0.id == updatedEntry.id }) {
                     self.entries[index] = updatedEntry
                     self.saveEntries()
+                    Task {
+                        try? await PronunciationDictionaryStore.shared.updateLabel(
+                            dictionaryEntryID: updatedEntry.id,
+                            label: updatedEntry.replacement
+                        )
+                    }
                 }
             }
         }
@@ -254,6 +270,7 @@ struct CustomDictionaryView: View {
             self.entries = SettingsStore.shared.customDictionaryEntries
             self.loadBoostTerms()
             self.automaticDictionaryLearningEnabled = SettingsStore.shared.automaticDictionaryLearningEnabled
+            self.pronunciationMatchingEnabled = SettingsStore.shared.pronunciationMatchingEnabled
             self.punctuationAutoConvertEnabled = SettingsStore.shared.autoConvertPunctuationEnabled
         }
         .onReceive(NotificationCenter.default.publisher(for: .parakeetVocabularyDidChange)) { _ in
@@ -457,7 +474,7 @@ struct CustomDictionaryView: View {
             Spacer(minLength: 0)
 
             Button {
-                self.addTrainedReplacement()
+                Task { await self.addTrainedReplacement() }
             } label: {
                 Label(
                     self.trainedReplacementButtonTitle,
@@ -606,13 +623,53 @@ struct CustomDictionaryView: View {
 
     private var trainingRecorderPanel: some View {
         VStack(alignment: .leading, spacing: self.theme.metrics.spacing.md) {
-            Text("Teach FluidVoice your pronunciation")
-                .font(self.theme.typography.bodySmallStrong)
+            HStack(alignment: .top, spacing: self.theme.metrics.spacing.md) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Teach FluidVoice your pronunciation")
+                        .font(self.theme.typography.bodySmallStrong)
 
-            if self.trainingFinalOutputIsReady {
-                Label("FluidVoice got it right 3 times in a row.", systemImage: "checkmark.circle.fill")
+                    Text(
+                        self.pronunciationMatchingEnabled
+                            ? "Learns from 3 recordings and matches your pronunciation before text replacement."
+                            : "Off uses the current text-only replacement. Turn on to learn how you pronounce this word."
+                    )
+                    .font(self.theme.typography.caption)
+                    .foregroundStyle(self.theme.palette.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("Voice matching")
+                        .font(self.theme.typography.captionStrong)
+                        .foregroundStyle(self.theme.palette.primaryText)
+
+                    Toggle("Voice matching", isOn: self.$pronunciationMatchingEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .tint(self.theme.palette.accent)
+                        .disabled(self.isTrainingRecording || self.isTrainingProcessing)
+                        .onChange(of: self.pronunciationMatchingEnabled) { _, enabled in
+                            self.handlePronunciationMatchingChange(enabled: enabled)
+                        }
+                        .help("Experimental: match your saved pronunciation before text replacements")
+                }
+            }
+
+            if self.trainingAlreadyCorrectWithoutReplacement {
+                Label("Already recognized correctly", systemImage: "checkmark.circle.fill")
                     .font(self.theme.typography.captionStrong)
                     .foregroundStyle(self.theme.palette.accent)
+            } else if self.trainingFinalOutputIsReady {
+                Label(
+                    self.pronunciationMatchingEnabled
+                        ? "Voice profile captured 3 times."
+                        : "FluidVoice got it right 3 times in a row.",
+                    systemImage: "checkmark.circle.fill"
+                )
+                .font(self.theme.typography.captionStrong)
+                .foregroundStyle(self.theme.palette.accent)
             } else {
                 VStack(alignment: .leading, spacing: 7) {
                     self.trainingInstruction(number: 1, text: "Press Start once.")
@@ -670,26 +727,15 @@ struct CustomDictionaryView: View {
 
     private var trainingReadinessCaption: String {
         if self.trainingAlreadyCorrectWithoutReplacement {
-            return "Already correct. No replacement is needed."
+            return "No dictionary entry was added."
         }
         if self.trainingFinalOutputIsReady {
             return "Ready. Add Replacement is unlocked."
         }
         let remaining = max(0, CustomDictionaryTrainingMerge.readyCoveredCount - self.trainingReadinessProgress)
-        return "\(remaining) correct \(remaining == 1 ? "try" : "tries") to unlock Add Replacement."
-    }
-
-    private func trainingInstruction(number: Int, text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("\(number)")
-                .font(self.theme.typography.captionStrong)
-                .foregroundStyle(self.theme.palette.accent)
-                .frame(width: 16, alignment: .center)
-
-            Text(text)
-                .font(self.theme.typography.caption)
-                .foregroundStyle(self.theme.palette.secondaryText)
-        }
+        return self.pronunciationMatchingEnabled
+            ? "\(remaining) voice \(remaining == 1 ? "sample" : "samples") to unlock Add Replacement."
+            : "\(remaining) correct \(remaining == 1 ? "try" : "tries") to unlock Add Replacement."
     }
 
     private var trainingHeardSection: some View {
@@ -1823,6 +1869,11 @@ struct CustomDictionaryView: View {
 
         let transcript = await self.asr.stop(forDictionaryTraining: true)
         self.isTrainingProcessing = false
+        if self.pronunciationMatchingEnabled,
+           let enrollment = self.asr.lastDictionaryTrainingResult?.pronunciationEnrollment
+        {
+            self.trainingPronunciationEnrollments.append(enrollment)
+        }
         self.addTrainingVariant(from: transcript)
         await self.continueAutomaticTrainingIfNeeded()
     }
@@ -1851,6 +1902,13 @@ struct CustomDictionaryView: View {
     }
 
     private func addTrainingVariant(from transcript: String) {
+        if self.pronunciationMatchingEnabled,
+           self.asr.lastDictionaryTrainingResult?.pronunciationEnrollment == nil
+        {
+            self.trainingHasError = true
+            self.trainingStatusMessage = "Couldn't capture a voice profile. Try again with one clear word."
+            return
+        }
         guard let detected = CustomDictionaryTrainingMerge.normalizedTrigger(transcript) else {
             self.lastTrainingOutput = ""
             self.lastTrainingOutputIsCovered = false
@@ -1913,8 +1971,9 @@ struct CustomDictionaryView: View {
         }
     }
 
-    private func addTrainedReplacement() {
+    private func addTrainedReplacement() async {
         guard self.canAddTrainedReplacement else { return }
+        self.isTrainingProcessing = true
         let replacementText = self.normalizedTrainingReplacement
         let updatesExisting = self.entries.contains {
             $0.replacement.caseInsensitiveCompare(replacementText) == .orderedSame
@@ -1924,6 +1983,29 @@ struct CustomDictionaryView: View {
             replacement: replacementText,
             triggers: self.trainingVariants
         )
+        let entry = self.entries.first {
+            $0.replacement.caseInsensitiveCompare(replacementText) == .orderedSame
+        }
+        let enrollments = self.trainingPronunciationEnrollments
+        if self.pronunciationMatchingEnabled, let entry, let modelKey = enrollments.first?.modelKey {
+            do {
+                try await PronunciationDictionaryStore.shared.upsert(
+                    dictionaryEntryID: entry.id,
+                    label: replacementText,
+                    modelKey: modelKey,
+                    enrollments: enrollments
+                )
+            } catch {
+                self.isTrainingProcessing = false
+                self.trainingHasError = true
+                self.trainingStatusMessage = "Couldn't save the voice profile. Try again."
+                DebugLogger.shared.error(
+                    "Failed to save pronunciation profile: \(error.localizedDescription)",
+                    source: "PronunciationMatching"
+                )
+                return
+            }
+        }
         self.saveEntries()
         self.resetTraining()
         self.showReplacementConfirmation(
@@ -1962,6 +2044,7 @@ struct CustomDictionaryView: View {
         DictionaryTrainingEndpointMonitor.shared.stop()
         self.trainingReplacement = ""
         self.trainingVariants = []
+        self.trainingPronunciationEnrollments = []
         self.trainingSampleCount = 0
         self.lastTrainingOutput = ""
         self.lastTrainingOutputIsCovered = false
@@ -1981,6 +2064,7 @@ struct CustomDictionaryView: View {
         guard oldKey != newKey else { return }
 
         self.trainingVariants = self.existingTrainingVariants(for: newValue)
+        self.trainingPronunciationEnrollments = []
         self.trainingSampleCount = 0
         self.lastTrainingOutput = ""
         self.lastTrainingOutputIsCovered = false
@@ -2168,6 +2252,9 @@ struct CustomDictionaryView: View {
     private func deleteEntry(_ entry: SettingsStore.CustomDictionaryEntry) {
         self.entries.removeAll { $0.id == entry.id }
         self.saveEntries()
+        Task {
+            try? await PronunciationDictionaryStore.shared.delete(dictionaryEntryID: entry.id)
+        }
     }
 
     /// Returns all existing trigger words for duplicate detection
@@ -2187,6 +2274,41 @@ struct CustomDictionaryView: View {
             terms.insert(term.text.lowercased())
         }
         return terms
+    }
+}
+
+private extension CustomDictionaryView {
+    var trainedReplacementButtonTitle: String {
+        self.trainingAlreadyCorrectWithoutReplacement ? "Nothing to Save" : "Add Replacement"
+    }
+
+    var shouldEmphasizeTrainedReplacementButton: Bool {
+        self.trainingFinalOutputIsReady && self.canAddTrainedReplacement
+    }
+
+    func trainingInstruction(number: Int, text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(number)")
+                .font(self.theme.typography.captionStrong)
+                .foregroundStyle(self.theme.palette.accent)
+                .frame(width: 16, alignment: .center)
+
+            Text(text)
+                .font(self.theme.typography.caption)
+                .foregroundStyle(self.theme.palette.secondaryText)
+        }
+    }
+
+    func handlePronunciationMatchingChange(enabled: Bool) {
+        SettingsStore.shared.pronunciationMatchingEnabled = enabled
+        self.isAutomaticTrainingEnabled = false
+        DictionaryTrainingEndpointMonitor.shared.stop()
+        self.trainingVariants = self.existingTrainingVariants(for: self.trainingReplacement)
+        self.trainingPronunciationEnrollments = []
+        self.resetTrainingVerificationAttempts()
+        self.trainingStatusMessage = self.normalizedTrainingReplacement.isEmpty
+            ? "Type the correct text."
+            : ""
     }
 }
 

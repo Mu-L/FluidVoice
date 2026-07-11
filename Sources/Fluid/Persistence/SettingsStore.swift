@@ -3967,6 +3967,14 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    var pronunciationMatchingEnabled: Bool {
+        get { self.defaults.object(forKey: Keys.pronunciationMatchingEnabled) as? Bool ?? false }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.pronunciationMatchingEnabled)
+        }
+    }
+
     /// Custom dictionary entries for word replacement
     var customDictionaryEntries: [CustomDictionaryEntry] {
         get {
@@ -4841,6 +4849,7 @@ private extension SettingsStore {
         static let customDictionaryEntries = "CustomDictionaryEntries"
         static let automaticDictionaryLearningEnabled = "AutomaticDictionaryLearningEnabled"
         static let vocabularyBoostingEnabled = "VocabularyBoostingEnabled"
+        static let pronunciationMatchingEnabled = "PronunciationMatchingEnabled"
 
         // Transcription Provider (ASR)
         static let selectedTranscriptionProvider = "SelectedTranscriptionProvider"

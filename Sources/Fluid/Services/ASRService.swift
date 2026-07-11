@@ -87,6 +87,7 @@ final class ASRService: ObservableObject {
     @Published var downloadingModelId: String? = nil // Tracks which model is currently being downloaded
     @Published private(set) var isCancellingModelDownload: Bool = false
     @Published private(set) var isDictionaryTrainingCaptureActive: Bool = false
+    private(set) var lastDictionaryTrainingResult: ASRTranscriptionResult?
 
     private var isStarting: Bool = false // Guard against re-entrant start() calls
     private var hasCompletedFirstTranscription: Bool = false // Track if model has warmed up with first transcription
@@ -1345,6 +1346,9 @@ final class ASRService: ObservableObject {
         forDictionaryTraining: Bool = false
     ) async -> String {
         DebugLogger.shared.info("🛑 STOP() called - beginning shutdown sequence", source: "ASRService")
+        if forDictionaryTraining || self.isDictionaryTrainingCaptureActive {
+            self.lastDictionaryTrainingResult = nil
+        }
         self.lastCompletedAudioSnapshot = nil
         let stopStartedAt = Date().timeIntervalSince1970
         self.benchmarkLog("stop_start ageMs=\(self.elapsedMilliseconds(since: self.benchmarkRecordingStartedAt)) bufferedSamples=\(self.audioBuffer.count)")
@@ -1494,6 +1498,7 @@ final class ASRService: ObservableObject {
                 result = try await self.transcriptionExecutor.run { [provider] in
                     try await provider.transcribeDictionaryTraining(pcm)
                 }
+                self.lastDictionaryTrainingResult = result
                 finalSource = "dictionaryTraining"
             } else {
                 result = try await self.transcriptionExecutor.run { [provider] in

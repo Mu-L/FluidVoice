@@ -46,10 +46,16 @@ final class ModelPreparationProgressRelay: @unchecked Sendable {
 struct ASRTranscriptionResult {
     let text: String
     let confidence: Float
+    let pronunciationEnrollment: PronunciationEnrollmentCapture?
 
-    init(text: String, confidence: Float = 1.0) {
+    init(
+        text: String,
+        confidence: Float = 1.0,
+        pronunciationEnrollment: PronunciationEnrollmentCapture? = nil
+    ) {
         self.text = text
         self.confidence = confidence
+        self.pronunciationEnrollment = pronunciationEnrollment
     }
 }
 
