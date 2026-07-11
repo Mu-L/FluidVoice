@@ -286,28 +286,49 @@ private struct AutomaticDictionaryCorrectionOverlayView: View {
 
             self.correctionPair
 
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(self.session.trainingHeadline)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.94))
+            VStack(alignment: .leading, spacing: 9) {
+                Text("Teach FluidVoice your pronunciation")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.94))
 
-                    Text(self.session.trainingDetail)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.white.opacity(0.56))
-                        .lineLimit(2)
-
-                    self.readinessRow
+                if self.session.isReady {
+                    Label("FluidVoice got it right 3 times in a row.", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(self.accent)
+                } else {
+                    VStack(alignment: .leading, spacing: 5) {
+                        self.trainingInstruction(number: 1, text: "Press Start once.")
+                        self.trainingInstruction(
+                            number: 2,
+                            text: "Say the word, then pause. FluidVoice captures it and listens again."
+                        )
+                        self.trainingInstruction(number: 3, text: "Repeat naturally until the circle reaches 3/3.")
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
 
-                CorrectionOverlayRecordButton(
-                    title: self.session.recordButtonTitle,
-                    isStop: self.session.recordButtonIsStop,
-                    isEnabled: self.session.canUseRecordButton,
-                    accent: self.accent,
-                    action: self.session.toggleCapture
-                )
+                HStack(spacing: 12) {
+                    CorrectionOverlayReadinessRing(
+                        progress: self.session.readinessProgress,
+                        total: CustomDictionaryTrainingMerge.readyCoveredCount,
+                        isReady: self.session.isReady,
+                        accent: self.accent
+                    )
+
+                    Text(self.overlayReadinessCaption)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(self.session.isReady ? self.accent : .white.opacity(0.58))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer(minLength: 8)
+
+                    CorrectionOverlayRecordButton(
+                        title: self.session.recordButtonTitle,
+                        isStop: self.session.recordButtonIsStop,
+                        isEnabled: self.session.canUseRecordButton,
+                        accent: self.accent,
+                        action: self.session.toggleCapture
+                    )
+                }
             }
             .padding(10)
             .background(self.panelSurface)
@@ -318,19 +339,19 @@ private struct AutomaticDictionaryCorrectionOverlayView: View {
                 self.capturedVariantsRow
             }
 
-            if self.session.capturePhase == .idle, !self.session.statusMessage.isEmpty {
+            if self.session.capturePhase == .idle, self.session.hasError, !self.session.statusMessage.isEmpty {
                 Label(
                     self.session.statusMessage,
-                    systemImage: self.session.hasError ? "exclamationmark.triangle.fill" : "checkmark.circle"
+                    systemImage: "exclamationmark.triangle.fill"
                 )
                 .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(self.session.hasError ? Color.red.opacity(0.9) : .white.opacity(0.58))
+                .foregroundStyle(Color.red.opacity(0.9))
                 .lineLimit(1)
             }
 
             CorrectionOverlayActionButton(
                 title: "Add Replacement",
-                systemImage: "plus",
+                systemImage: self.session.isReady ? "sparkles" : "plus",
                 style: .accent,
                 accent: self.accent,
                 isEnabled: self.session.canSave,
@@ -339,6 +360,31 @@ private struct AutomaticDictionaryCorrectionOverlayView: View {
             )
         }
         .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+
+    private var overlayReadinessCaption: String {
+        if self.session.isReady {
+            return "Ready. Add Replacement is unlocked."
+        }
+        let remaining = max(
+            0,
+            CustomDictionaryTrainingMerge.readyCoveredCount - self.session.readinessProgress
+        )
+        return "\(remaining) correct \(remaining == 1 ? "try" : "tries") to unlock Add Replacement."
+    }
+
+    private func trainingInstruction(number: Int, text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Text("\(number)")
+                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(self.accent)
+                .frame(width: 14)
+
+            Text(text)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.white.opacity(0.58))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var successContent: some View {
@@ -430,32 +476,6 @@ private struct AutomaticDictionaryCorrectionOverlayView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var readinessRow: some View {
-        HStack(spacing: 8) {
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.1))
-                    Capsule()
-                        .fill(self.accent)
-                        .frame(width: proxy.size.width * CGFloat(self.session.readinessFraction))
-                }
-            }
-            .frame(height: 4)
-
-            Text("\(self.session.readinessProgress)/\(CustomDictionaryTrainingMerge.readyCoveredCount)")
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.58))
-                .monospacedDigit()
-                .frame(width: 24, alignment: .trailing)
-
-            Text("\(self.session.sampleCount)/\(CustomDictionaryTrainingMerge.maxSamples)")
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.38))
-                .monospacedDigit()
-                .frame(width: 30, alignment: .trailing)
-        }
-    }
-
     private var finalOutputRow: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
@@ -534,6 +554,50 @@ private struct AutomaticDictionaryCorrectionOverlayView: View {
                         lineWidth: 1
                     )
             )
+    }
+}
+
+private struct CorrectionOverlayReadinessRing: View {
+    let progress: Int
+    let total: Int
+    let isReady: Bool
+    let accent: Color
+
+    private var fraction: Double {
+        guard self.total > 0 else { return 0 }
+        return min(max(Double(self.progress) / Double(self.total), 0), 1)
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.16), lineWidth: 7)
+
+            Circle()
+                .trim(from: 0, to: self.fraction)
+                .stroke(
+                    self.accent,
+                    style: StrokeStyle(lineWidth: 7, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+
+            VStack(spacing: 0) {
+                Text("\(self.progress)/\(self.total)")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(self.isReady ? self.accent : .white.opacity(0.92))
+                    .monospacedDigit()
+
+                Text(self.isReady ? "Ready" : "correct")
+                    .font(.system(size: 8.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.46))
+            }
+        }
+        .frame(width: 76, height: 76)
+        .shadow(color: self.isReady ? self.accent.opacity(0.22) : .clear, radius: 9)
+        .animation(.easeOut(duration: 0.24), value: self.progress)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Training progress")
+        .accessibilityValue("\(self.progress) of \(self.total) correct")
     }
 }
 

@@ -64,10 +64,6 @@ final class AutomaticDictionaryTrainingSession: ObservableObject {
         return min(self.consecutiveCoveredCaptures, CustomDictionaryTrainingMerge.readyCoveredCount)
     }
 
-    var readinessFraction: Double {
-        Double(self.readinessProgress) / Double(CustomDictionaryTrainingMerge.readyCoveredCount)
-    }
-
     var isReady: Bool {
         self.readinessProgress >= CustomDictionaryTrainingMerge.readyCoveredCount
     }
@@ -115,23 +111,6 @@ final class AutomaticDictionaryTrainingSession: ObservableObject {
                 ? "Try Again"
                 : "Start"
         }
-    }
-
-    var trainingHeadline: String {
-        if self.isReady {
-            return "FluidVoice understands you"
-        }
-        return self.sampleCount == 0 ? "Say it naturally" : "Say it again"
-    }
-
-    var trainingDetail: String {
-        if self.isReady {
-            return "FluidVoice got it right 3 times. Add it now, or keep training."
-        }
-        if self.sampleCount >= CustomDictionaryTrainingMerge.maxSamples {
-            return "Not quite there yet. Try another round when you're ready."
-        }
-        return "Start once and keep saying it. Each pause checks a try, then FluidVoice listens again until it gets it right 3 times."
     }
 
     func beginTraining() {

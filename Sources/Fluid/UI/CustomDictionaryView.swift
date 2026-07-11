@@ -66,18 +66,6 @@ struct CustomDictionaryView: View {
         self.trainingReplacement.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var trainingProgressText: String {
-        let count = self.trainingSampleCount
-        return "\(count) \(count == 1 ? "sample" : "samples") · up to \(CustomDictionaryTrainingMerge.maxSamples)"
-    }
-
-    private var shouldShowTrainingStatus: Bool {
-        self.trainingHasError || (
-            !self.trainingStatusMessage.isEmpty &&
-                self.trainingStatusMessage != "Type the correct text."
-        )
-    }
-
     private var canUseTrainingRecorderButton: Bool {
         if self.isAutomaticTrainingEnabled {
             return true
@@ -95,72 +83,6 @@ struct CustomDictionaryView: View {
             return "Stop"
         }
         return self.canRetryTrainingAfterMaximum ? "Try Again" : "Start"
-    }
-
-    private var trainingRecorderTitle: String {
-        if self.trainingStopRequestedDuringStart {
-            return "Stopping..."
-        }
-        if self.isTrainingProcessing {
-            return "Working..."
-        }
-        if self.isTrainingStarting {
-            return "Starting..."
-        }
-        if self.isTrainingRecording {
-            return "Listening..."
-        }
-        if self.trainingFinalOutputIsReady {
-            return "Ready to add"
-        }
-        if self.normalizedTrainingReplacement.isEmpty {
-            return "Start training"
-        }
-        return self.trainingSampleCount == 0 ? "Start once" : "Keep going"
-    }
-
-    private var trainingRecorderDetail: String {
-        if self.normalizedTrainingReplacement.isEmpty {
-            return "Type the correct text first."
-        }
-        if self.trainingFinalOutputIsReady {
-            return "FluidVoice got it right 3 times. Add the replacement, or keep training."
-        }
-        if self.canRetryTrainingAfterMaximum {
-            return "Not quite there yet. Try another round when you're ready."
-        }
-        return "Start once and keep saying it. Each pause checks a try, then FluidVoice listens again until it gets it right 3 times."
-    }
-
-    private var trainingRecorderStatusText: String {
-        guard !self.lastTrainingOutput.isEmpty else { return "Record to check" }
-        if self.trainingAlreadyCorrectWithoutReplacement {
-            return "Already correct"
-        }
-        if self.trainingFinalOutputIsReady {
-            return "Ready to add"
-        }
-        return "\(self.trainingReadinessProgress)/\(CustomDictionaryTrainingMerge.readyCoveredCount) understood"
-    }
-
-    private var trainingRecorderStatusColor: Color {
-        self.trainingFinalOutputIsReady || self.trainingAlreadyCorrectWithoutReplacement
-            ? self.theme.palette.success
-            : self.theme.palette.secondaryText
-    }
-
-    private var trainingRecorderFillColor: Color {
-        self.trainingFinalOutputIsReady || self.trainingAlreadyCorrectWithoutReplacement
-            ? self.theme.palette.success
-            : self.theme.palette.accent
-    }
-
-    private var trainingRecorderFillFraction: Double {
-        guard !self.lastTrainingOutput.isEmpty else { return 0 }
-        if self.trainingAlreadyCorrectWithoutReplacement {
-            return 1
-        }
-        return Double(self.trainingReadinessProgress) / Double(CustomDictionaryTrainingMerge.readyCoveredCount)
     }
 
     private var trainingFinalOutputIsReady: Bool {
@@ -537,9 +459,14 @@ struct CustomDictionaryView: View {
             Button {
                 self.addTrainedReplacement()
             } label: {
-                Label(self.trainedReplacementButtonTitle, systemImage: self.trainingAlreadyCorrectWithoutReplacement ? "checkmark" : "plus")
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 38)
+                Label(
+                    self.trainedReplacementButtonTitle,
+                    systemImage: self.shouldEmphasizeTrainedReplacementButton
+                        ? "sparkles"
+                        : (self.trainingAlreadyCorrectWithoutReplacement ? "checkmark" : "plus")
+                )
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
             }
             .fluidButton(self.shouldEmphasizeTrainedReplacementButton ? .accent : .compact, size: .small)
             .disabled(!self.canAddTrainedReplacement)
@@ -678,102 +605,90 @@ struct CustomDictionaryView: View {
     }
 
     private var trainingRecorderPanel: some View {
-        HStack(alignment: .center, spacing: self.theme.metrics.spacing.md) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(self.trainingRecorderTitle)
-                    .font(self.theme.typography.bodySmallStrong)
+        VStack(alignment: .leading, spacing: self.theme.metrics.spacing.md) {
+            Text("Teach FluidVoice your pronunciation")
+                .font(self.theme.typography.bodySmallStrong)
 
-                Text(self.trainingRecorderDetail)
-                    .font(self.theme.typography.caption)
-                    .foregroundStyle(self.theme.palette.secondaryText)
-                    .lineLimit(2)
-
-                self.trainingRecorderProgressRow
-
-                HStack(spacing: 7) {
-                    Text(self.trainingRecorderStatusText)
-                        .font(self.theme.typography.captionStrong)
-                        .foregroundStyle(self.trainingRecorderStatusColor)
-                        .lineLimit(1)
-
-                    Text("· \(self.trainingProgressText) recorded")
-                        .font(self.theme.typography.caption)
-                        .foregroundStyle(self.theme.palette.tertiaryText)
-                        .lineLimit(1)
+            if self.trainingFinalOutputIsReady {
+                Label("FluidVoice got it right 3 times in a row.", systemImage: "checkmark.circle.fill")
+                    .font(self.theme.typography.captionStrong)
+                    .foregroundStyle(self.theme.palette.accent)
+            } else {
+                VStack(alignment: .leading, spacing: 7) {
+                    self.trainingInstruction(number: 1, text: "Press Start once.")
+                    self.trainingInstruction(number: 2, text: "Say the word, then pause. FluidVoice captures it and listens again.")
+                    self.trainingInstruction(number: 3, text: "Repeat naturally until the circle reaches 3/3.")
                 }
             }
 
-            Spacer()
-
-            Button {
-                Task { await self.toggleAutomaticTraining() }
-            } label: {
-                Label(
-                    self.trainingRecorderButtonTitle,
-                    systemImage: self.trainingRecorderIsStop ? "stop.fill" : "mic.fill"
+            HStack(spacing: self.theme.metrics.spacing.md) {
+                DictionaryTrainingReadinessRing(
+                    progress: self.trainingReadinessProgress,
+                    total: CustomDictionaryTrainingMerge.readyCoveredCount,
+                    isReady: self.trainingFinalOutputIsReady || self.trainingAlreadyCorrectWithoutReplacement
                 )
+
+                Text(self.trainingReadinessCaption)
+                    .font(self.theme.typography.captionStrong)
+                    .foregroundStyle(
+                        self.trainingFinalOutputIsReady
+                            ? self.theme.palette.accent
+                            : self.theme.palette.secondaryText
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer()
+
+                Button {
+                    Task { await self.toggleAutomaticTraining() }
+                } label: {
+                    Label(
+                        self.trainingRecorderButtonTitle,
+                        systemImage: self.trainingRecorderIsStop ? "stop.fill" : "mic.fill"
+                    )
+                }
+                .fluidButton(self.trainingRecorderIsStop ? .destructive : .accent, size: .small)
+                .disabled(!self.canUseTrainingRecorderButton)
+                .opacity(self.canUseTrainingRecorderButton ? 1 : 0.45)
             }
-            .fluidButton(self.trainingRecorderIsStop ? .destructive : .accent, size: .small)
-            .disabled(!self.canUseTrainingRecorderButton)
-            .opacity(self.canUseTrainingRecorderButton ? 1 : 0.45)
         }
         .padding(self.theme.metrics.spacing.md)
-        .background(self.trainingRecorderBackground)
-    }
-
-    private var trainingRecorderBackground: some View {
-        GeometryReader { proxy in
-            let fillWidth = proxy.size.width * min(max(self.trainingRecorderFillFraction, 0), 1)
-
+        .background(
             RoundedRectangle(cornerRadius: self.theme.metrics.corners.md, style: .continuous)
                 .fill(self.theme.palette.contentBackground.opacity(0.5))
-                .overlay(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: self.theme.metrics.corners.md, style: .continuous)
-                        .fill(self.trainingRecorderFillColor.opacity(0.16))
-                        .frame(width: fillWidth)
-                }
                 .overlay(
                     RoundedRectangle(cornerRadius: self.theme.metrics.corners.md, style: .continuous)
-                        .stroke(self.trainingRecorderBorderColor, lineWidth: 1)
+                        .stroke(
+                            self.trainingFinalOutputIsReady
+                                ? self.theme.palette.accent.opacity(0.26)
+                                : self.theme.palette.cardBorder.opacity(0.25),
+                            lineWidth: 1
+                        )
                 )
-                .animation(.easeOut(duration: 0.18), value: self.trainingRecorderFillFraction)
+        )
+    }
+
+    private var trainingReadinessCaption: String {
+        if self.trainingAlreadyCorrectWithoutReplacement {
+            return "Already correct. No replacement is needed."
         }
-        .allowsHitTesting(false)
-    }
-
-    private var trainingRecorderBorderColor: Color {
-        self.trainingFinalOutputIsReady || self.trainingAlreadyCorrectWithoutReplacement
-            ? self.theme.palette.success.opacity(0.28)
-            : self.theme.palette.cardBorder.opacity(0.25)
-    }
-
-    private var trainingRecorderProgressBar: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width * min(max(self.trainingRecorderFillFraction, 0), 1)
-
-            ZStack(alignment: .leading) {
-                Capsule(style: .continuous)
-                    .fill(self.theme.palette.cardBorder.opacity(0.35))
-
-                Capsule(style: .continuous)
-                    .fill(self.trainingRecorderFillColor)
-                    .frame(width: width)
-            }
+        if self.trainingFinalOutputIsReady {
+            return "Ready. Add Replacement is unlocked."
         }
-        .frame(height: 5)
-        .animation(.easeOut(duration: 0.18), value: self.trainingRecorderFillFraction)
-        .accessibilityHidden(true)
+        let remaining = max(0, CustomDictionaryTrainingMerge.readyCoveredCount - self.trainingReadinessProgress)
+        return "\(remaining) correct \(remaining == 1 ? "try" : "tries") to unlock Add Replacement."
     }
 
-    private var trainingRecorderProgressRow: some View {
-        HStack(spacing: self.theme.metrics.spacing.sm) {
-            self.trainingRecorderProgressBar
-
-            Text("\(self.trainingReadinessProgress)/\(CustomDictionaryTrainingMerge.readyCoveredCount)")
+    private func trainingInstruction(number: Int, text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(number)")
                 .font(self.theme.typography.captionStrong)
-                .foregroundStyle(self.trainingRecorderStatusColor)
-                .monospacedDigit()
-                .frame(width: 34, alignment: .trailing)
+                .foregroundStyle(self.theme.palette.accent)
+                .frame(width: 16, alignment: .center)
+
+            Text(text)
+                .font(self.theme.typography.caption)
+                .foregroundStyle(self.theme.palette.secondaryText)
         }
     }
 
@@ -856,16 +771,12 @@ struct CustomDictionaryView: View {
 
     @ViewBuilder
     private var trainingFooter: some View {
-        if self.shouldShowTrainingStatus || self.isTrainingActive || !self.trainingVariants.isEmpty {
+        if self.trainingHasError || self.isTrainingActive || !self.trainingVariants.isEmpty {
             HStack(spacing: self.theme.metrics.spacing.sm) {
                 if self.trainingHasError {
                     Label(self.trainingStatusMessage, systemImage: "exclamationmark.triangle.fill")
                         .font(self.theme.typography.caption)
                         .foregroundStyle(self.theme.palette.warning)
-                } else if self.shouldShowTrainingStatus {
-                    Text(self.trainingStatusMessage)
-                        .font(self.theme.typography.caption)
-                        .foregroundStyle(self.theme.palette.secondaryText)
                 }
 
                 if self.isTrainingActive || !self.trainingVariants.isEmpty || !self.normalizedTrainingReplacement.isEmpty {
@@ -2306,7 +2217,7 @@ private enum DictionaryComposerMode: CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .train:
-            return "Say it a few times so FluidVoice can catch the versions it hears."
+            return "Teach a word by speaking it."
         case .manual:
             return "Type the misheard text and the spelling you want."
         }
@@ -2559,6 +2470,51 @@ private struct ReplacementConfirmationToast: View {
                 )
         )
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct DictionaryTrainingReadinessRing: View {
+    let progress: Int
+    let total: Int
+    let isReady: Bool
+
+    @Environment(\.theme) private var theme
+
+    private var fraction: Double {
+        guard self.total > 0 else { return 0 }
+        return min(max(Double(self.progress) / Double(self.total), 0), 1)
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(self.theme.palette.cardBorder.opacity(0.62), lineWidth: 8)
+
+            Circle()
+                .trim(from: 0, to: self.fraction)
+                .stroke(
+                    self.theme.palette.accent,
+                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+
+            VStack(spacing: 1) {
+                Text("\(self.progress)/\(self.total)")
+                    .font(self.theme.typography.sectionTitle)
+                    .foregroundStyle(self.isReady ? self.theme.palette.accent : self.theme.palette.primaryText)
+                    .monospacedDigit()
+
+                Text(self.isReady ? "Ready" : "correct")
+                    .font(self.theme.typography.captionSmall)
+                    .foregroundStyle(self.theme.palette.secondaryText)
+            }
+        }
+        .frame(width: 92, height: 92)
+        .shadow(color: self.isReady ? self.theme.palette.accent.opacity(0.2) : .clear, radius: 10)
+        .animation(.easeOut(duration: 0.24), value: self.progress)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Training progress")
+        .accessibilityValue("\(self.progress) of \(self.total) correct")
     }
 }
 
