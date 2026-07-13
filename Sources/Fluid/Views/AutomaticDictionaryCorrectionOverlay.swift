@@ -53,8 +53,7 @@ final class DictionaryCorrectionOverlayController {
             session: session,
             displayDuration: Double(Self.displayDurationNanoseconds) / 1_000_000_000,
             onDismiss: { [weak self] in
-                self?.reportOutcome(.dismissed)
-                self?.hide()
+                self?.dismiss()
             }
         )
 
@@ -119,6 +118,11 @@ final class DictionaryCorrectionOverlayController {
                 self.clearSession()
             }
         }
+    }
+
+    func dismiss() {
+        self.reportOutcome(.dismissed)
+        self.hide()
     }
 
     private func keepVisible() {

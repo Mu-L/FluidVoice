@@ -1,5 +1,24 @@
 import Foundation
 
+struct DictionaryTrainingAudioCursor {
+    private(set) var sampleOffset = 0
+    private var generation: Int
+
+    init(generation: Int) {
+        self.generation = generation
+    }
+
+    mutating func synchronize(generation: Int) {
+        guard generation != self.generation else { return }
+        self.generation = generation
+        self.sampleOffset = 0
+    }
+
+    mutating func consume(_ sampleCount: Int) {
+        self.sampleOffset += sampleCount
+    }
+}
+
 @MainActor
 final class DictionaryTrainingEndpointMonitor {
     static let shared = DictionaryTrainingEndpointMonitor()
@@ -42,19 +61,20 @@ final class DictionaryTrainingEndpointMonitor {
                     Task { await detector.endSession(detectorSession) }
                 }
 
-                var sampleOffset = 0
+                var cursor = DictionaryTrainingAudioCursor(generation: asr.dictionaryTrainingAudioGeneration)
                 while !Task.isCancelled {
                     guard asr.isRunning, asr.isDictionaryTrainingCaptureActive else { return }
+                    cursor.synchronize(generation: asr.dictionaryTrainingAudioGeneration)
 
                     let chunk = asr.dictionaryTrainingAudioChunk(
-                        at: sampleOffset,
+                        at: cursor.sampleOffset,
                         count: DictionaryTrainingEndpointDetector.chunkSize
                     )
                     guard !chunk.isEmpty else {
                         try await Task.sleep(nanoseconds: 40_000_000)
                         continue
                     }
-                    sampleOffset += chunk.count
+                    cursor.consume(chunk.count)
 
                     guard let event = try await detector.process(
                         chunk,

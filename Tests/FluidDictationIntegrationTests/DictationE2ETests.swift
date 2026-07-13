@@ -885,6 +885,16 @@ final class DictationE2ETests: XCTestCase {
         XCTAssertFalse(SettingsStore.SpeechModel.cohereTranscribeSixBit.supportsPronunciationMatching)
     }
 
+    func testDictionaryTrainingAudioCursorResetsAfterBufferGenerationChange() {
+        var cursor = DictionaryTrainingAudioCursor(generation: 4)
+        cursor.consume(1_600)
+        cursor.synchronize(generation: 4)
+        XCTAssertEqual(cursor.sampleOffset, 1_600)
+
+        cursor.synchronize(generation: 5)
+        XCTAssertEqual(cursor.sampleOffset, 0)
+    }
+
     func testProgressiveDownloaderRetainsFileByMovingIt() throws {
         let source = FileManager.default.temporaryDirectory
             .appendingPathComponent("FluidVoiceDownloadSource-\(UUID().uuidString)")

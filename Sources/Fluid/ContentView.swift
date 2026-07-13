@@ -3528,7 +3528,7 @@ struct ContentView: View {
 
         if DictionaryCorrectionOverlayController.shared.isPresented {
             DebugLogger.shared.debug("Cancel shortcut: closing dictionary suggestion", source: "ContentView")
-            DictionaryCorrectionOverlayController.shared.hide()
+            DictionaryCorrectionOverlayController.shared.dismiss()
             return true
         }
 

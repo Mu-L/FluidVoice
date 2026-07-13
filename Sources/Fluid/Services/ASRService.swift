@@ -101,6 +101,7 @@ final class ASRService: ObservableObject {
     @Published private(set) var isCancellingModelDownload: Bool = false
     @Published private(set) var isDictionaryTrainingCaptureActive: Bool = false
     private(set) var lastDictionaryTrainingResult: ASRTranscriptionResult?
+    private(set) var dictionaryTrainingAudioGeneration = 0
 
     private var isStarting: Bool = false // Guard against re-entrant start() calls
     private var hasCompletedFirstTranscription: Bool = false // Track if model has warmed up with first transcription
@@ -896,6 +897,7 @@ final class ASRService: ObservableObject {
         await self.stopStreamingTimerAndAwait()
         guard self.isRunning else { return }
         self.audioBuffer.clear(keepingCapacity: true)
+        self.dictionaryTrainingAudioGeneration &+= 1
         self.lastProcessedSampleCount = 0
         self.benchmarkLastChunkSampleCount = 0
         (self.transcriptionProvider as? FluidAudioProvider)?.resetStreamingPreviewCache()
