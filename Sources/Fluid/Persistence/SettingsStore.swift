@@ -1727,6 +1727,11 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    var directAudioCaptureConsecutiveFailures: Int {
+        get { self.defaults.integer(forKey: Keys.directAudioCaptureConsecutiveFailures) }
+        set { self.defaults.set(max(0, newValue), forKey: Keys.directAudioCaptureConsecutiveFailures) }
+    }
+
     var copyTranscriptionToClipboard: Bool {
         get { self.defaults.bool(forKey: Keys.copyTranscriptionToClipboard) }
         set { self.defaults.set(newValue, forKey: Keys.copyTranscriptionToClipboard) }
@@ -2953,6 +2958,7 @@ final class SettingsStore: ObservableObject {
             fillerWords: self.fillerWords,
             removeFillerWordsEnabled: self.removeFillerWordsEnabled,
             autoConvertPunctuationEnabled: self.autoConvertPunctuationEnabled,
+            literalDictationFormattingEnabled: self.literalDictationFormattingEnabled,
             punctuationDictionaryPrefix: self.punctuationDictionaryPrefix,
             punctuationDictionaryRules: self.punctuationDictionaryRules,
             gaavModeEnabled: self.gaavModeEnabled,
@@ -2962,6 +2968,8 @@ final class SettingsStore: ObservableObject {
             continuousDictationSpacingEnabled: self.continuousDictationSpacingEnabled,
             contextAwareCapitalizationEnabled: self.contextAwareCapitalizationEnabled,
             pauseMediaDuringTranscription: self.pauseMediaDuringTranscription,
+            automaticDictionaryLearningEnabled: self.automaticDictionaryLearningEnabled,
+            pronunciationMatchingEnabled: self.pronunciationMatchingEnabled,
             vocabularyBoostingEnabled: self.vocabularyBoostingEnabled,
             customDictionaryEntries: self.customDictionaryEntries,
             selectedDictationPromptID: self.selectedDictationPromptID,
@@ -3071,6 +3079,9 @@ final class SettingsStore: ObservableObject {
         if let autoConvertPunctuationEnabled = payload.autoConvertPunctuationEnabled {
             self.autoConvertPunctuationEnabled = autoConvertPunctuationEnabled
         }
+        if let literalDictationFormattingEnabled = payload.literalDictationFormattingEnabled {
+            self.literalDictationFormattingEnabled = literalDictationFormattingEnabled
+        }
         if let punctuationDictionaryPrefix = payload.punctuationDictionaryPrefix {
             self.punctuationDictionaryPrefix = punctuationDictionaryPrefix
         }
@@ -3086,6 +3097,12 @@ final class SettingsStore: ObservableObject {
         self.continuousDictationSpacingEnabled = payload.continuousDictationSpacingEnabled ?? restoredContinuousDictationModeEnabled
         self.contextAwareCapitalizationEnabled = payload.contextAwareCapitalizationEnabled ?? restoredContinuousDictationModeEnabled
         self.pauseMediaDuringTranscription = payload.pauseMediaDuringTranscription
+        if let automaticDictionaryLearningEnabled = payload.automaticDictionaryLearningEnabled {
+            self.automaticDictionaryLearningEnabled = automaticDictionaryLearningEnabled
+        }
+        if let pronunciationMatchingEnabled = payload.pronunciationMatchingEnabled {
+            self.pronunciationMatchingEnabled = pronunciationMatchingEnabled
+        }
         self.vocabularyBoostingEnabled = payload.vocabularyBoostingEnabled
         self.customDictionaryEntries = payload.customDictionaryEntries
 
@@ -3685,6 +3702,14 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    var literalDictationFormattingEnabled: Bool {
+        get { self.defaults.object(forKey: Keys.literalDictationFormattingEnabled) as? Bool ?? false }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.literalDictationFormattingEnabled)
+        }
+    }
+
     static let defaultPunctuationDictionaryPrefix = "literal"
 
     static let defaultPunctuationDictionaryRules: [PunctuationDictionaryRule] = [
@@ -3952,6 +3977,22 @@ final class SettingsStore: ObservableObject {
             objectWillChange.send()
             self.defaults.set(newValue, forKey: Keys.vocabularyBoostingEnabled)
             NotificationCenter.default.post(name: .parakeetVocabularyDidChange, object: nil)
+        }
+    }
+
+    var automaticDictionaryLearningEnabled: Bool {
+        get { self.defaults.object(forKey: Keys.automaticDictionaryLearningEnabled) as? Bool ?? true }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.automaticDictionaryLearningEnabled)
+        }
+    }
+
+    var pronunciationMatchingEnabled: Bool {
+        get { self.defaults.object(forKey: Keys.pronunciationMatchingEnabled) as? Bool ?? false }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.pronunciationMatchingEnabled)
         }
     }
 
@@ -4437,6 +4478,19 @@ final class SettingsStore: ObservableObject {
             }
         }
 
+        var supportsPronunciationMatching: Bool {
+            #if arch(arm64)
+            switch self {
+            case .parakeetTDT, .parakeetTDTv2:
+                return true
+            default:
+                return false
+            }
+            #else
+            return false
+            #endif
+        }
+
         /// Preview update cadence for real-time transcription.
         /// Models without native incremental decoding should use a slower interval.
         var streamingPreviewIntervalSeconds: Double {
@@ -4752,6 +4806,7 @@ private extension SettingsStore {
         static let enableStreamingPreview = "EnableStreamingPreview"
         static let enableAIStreaming = "EnableAIStreaming"
         static let experimentalDirectAudioCaptureEnabled = "ExperimentalDirectAudioCaptureEnabled"
+        static let directAudioCaptureConsecutiveFailures = "DirectAudioCaptureConsecutiveFailures"
         static let copyTranscriptionToClipboard = "CopyTranscriptionToClipboard"
         static let textInsertionMode = "TextInsertionMode"
         static let autoUpdateCheckEnabled = "AutoUpdateCheckEnabled"
@@ -4812,6 +4867,7 @@ private extension SettingsStore {
         static let fillerWords = "FillerWords"
         static let removeFillerWordsEnabled = "RemoveFillerWordsEnabled"
         static let autoConvertPunctuationEnabled = "AutoConvertPunctuationEnabled"
+        static let literalDictationFormattingEnabled = "LiteralDictationFormattingEnabled"
         static let punctuationDictionaryPrefix = "PunctuationDictionaryPrefix"
         static let punctuationDictionaryRules = "PunctuationDictionaryRules"
 
@@ -4827,7 +4883,9 @@ private extension SettingsStore {
 
         // Custom Dictionary
         static let customDictionaryEntries = "CustomDictionaryEntries"
+        static let automaticDictionaryLearningEnabled = "AutomaticDictionaryLearningEnabled"
         static let vocabularyBoostingEnabled = "VocabularyBoostingEnabled"
+        static let pronunciationMatchingEnabled = "PronunciationMatchingEnabled"
 
         // Transcription Provider (ASR)
         static let selectedTranscriptionProvider = "SelectedTranscriptionProvider"
