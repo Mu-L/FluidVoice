@@ -14,10 +14,13 @@ final class DictationE2ETests: XCTestCase {
     private let editPromptOffKey = "EditPromptOff"
     private let defaultDictationPromptOverrideKey = "DefaultDictationPromptOverride"
     private let defaultEditPromptOverrideKey = "DefaultEditPromptOverride"
+    private let dictationPromptRoutingScopeKey = "DictationPromptRoutingScope"
     private let savedProvidersKey = "SavedProviders"
     private let selectedProviderIDKey = "SelectedProviderID"
+    private let selectedAIModelKey = "SelectedAIModel"
     private let availableModelsByProviderKey = "AvailableModelsByProvider"
     private let selectedModelByProviderKey = "SelectedModelByProvider"
+    private let dictationPromptConfigurationsKey = "DictationPromptConfigurations"
     private let customDictionaryEntriesKey = "CustomDictionaryEntries"
     private let autoConvertPunctuationEnabledKey = "AutoConvertPunctuationEnabled"
     private let literalDictationFormattingEnabledKey = "LiteralDictationFormattingEnabled"
@@ -26,6 +29,8 @@ final class DictationE2ETests: XCTestCase {
     private let commandModeLinkedToGlobalKey = "CommandModeLinkedToGlobal"
     private let commandModeSelectedProviderIDKey = "CommandModeSelectedProviderID"
     private let commandModeSelectedModelKey = "CommandModeSelectedModel"
+    private let rewriteModeSelectedProviderIDKey = "RewriteModeSelectedProviderID"
+    private let rewriteModeSelectedModelKey = "RewriteModeSelectedModel"
     private var privateAISelectedModelIDKey: String {
         PrivateAIProviderFeature.shared.selectedModelDefaultsKey
     }
@@ -1491,6 +1496,174 @@ final class DictationE2ETests: XCTestCase {
             settings.selectedProviderID = "removed-provider"
 
             XCTAssertEqual(settings.selectedProviderID, "")
+        }
+    }
+
+    func testAppleIntelligenceIsNotAvailableAsABuiltInProvider() {
+        XCTAssertFalse(ModelRepository.builtInProviderIDs.contains("apple-intelligence"))
+        XCTAssertFalse(ModelRepository.shared.builtInProvidersList().contains { $0.id.contains("apple-intelligence") })
+    }
+
+    func testRetiredAppleIntelligenceStateIsPurgedWithoutSelectingAFallbackProvider() {
+        self.withRestoredDefaults(
+            keys: [
+                self.selectedProviderIDKey,
+                self.selectedAIModelKey,
+                self.availableModelsByProviderKey,
+                self.selectedModelByProviderKey,
+                self.verifiedProviderFingerprintsKey,
+                self.commandModeSelectedProviderIDKey,
+                self.commandModeSelectedModelKey,
+                self.rewriteModeSelectedProviderIDKey,
+                self.rewriteModeSelectedModelKey,
+                self.dictationPromptConfigurationsKey,
+            ]
+        ) {
+            let settings = SettingsStore.shared
+            let shortcut = HotkeyShortcut(keyCode: 1, modifierFlags: [.command])
+            settings.selectedProviderID = "apple-intelligence"
+            settings.selectedModel = "System Model"
+            settings.availableModelsByProvider = ["apple-intelligence": ["System Model"]]
+            settings.selectedModelByProvider = ["apple-intelligence": "System Model"]
+            settings.verifiedProviderFingerprints = ["apple-intelligence": "apple-intelligence"]
+            settings.commandModeSelectedProviderID = "apple-intelligence-disabled"
+            settings.commandModeSelectedModel = "System Model"
+            settings.rewriteModeSelectedProviderID = "apple-intelligence"
+            settings.rewriteModeSelectedModel = "System Model"
+            settings.dictationPromptConfigurations = [
+                "__default__": SettingsStore.DictationPromptConfiguration(
+                    shortcut: shortcut,
+                    providerID: "apple-intelligence",
+                    modelName: "System Model"
+                ),
+            ]
+
+            settings.purgeRetiredAppleIntelligenceState()
+            settings.purgeRetiredAppleIntelligenceState()
+
+            XCTAssertEqual(settings.selectedProviderID, "")
+            XCTAssertNil(settings.selectedModel)
+            XCTAssertEqual(settings.commandModeSelectedProviderID, "")
+            XCTAssertNil(settings.commandModeSelectedModel)
+            XCTAssertEqual(settings.rewriteModeSelectedProviderID, "")
+            XCTAssertNil(settings.rewriteModeSelectedModel)
+            XCTAssertNil(settings.availableModelsByProvider["apple-intelligence"])
+            XCTAssertNil(settings.selectedModelByProvider["apple-intelligence"])
+            XCTAssertNil(settings.verifiedProviderFingerprints["apple-intelligence"])
+            XCTAssertEqual(settings.dictationPromptConfigurations["__default__"]?.shortcut, shortcut)
+            XCTAssertEqual(settings.dictationPromptConfigurations["__default__"]?.providerID, "")
+            XCTAssertEqual(settings.dictationPromptConfigurations["__default__"]?.modelName, "")
+            XCTAssertFalse(DictationAIPostProcessingGate.isProviderConfigured())
+        }
+    }
+
+    func testDictationProviderRouteUsesPromptConfigurationWithoutMutatingGlobalSelection() {
+        self.withRestoredDefaults(
+            keys: [
+                self.selectedProviderIDKey,
+                self.selectedModelByProviderKey,
+                self.verifiedProviderFingerprintsKey,
+                self.dictationPromptConfigurationsKey,
+                self.dictationPromptOffKey,
+                self.selectedDictationPromptIDKey,
+            ]
+        ) {
+            let settings = SettingsStore.shared
+            settings.selectedProviderID = "openai"
+            settings.selectedModelByProvider = ["openai": "gpt-4.1", "ollama": "test-local-model"]
+            settings.verifiedProviderFingerprints = [
+                "ollama": DictationAIPostProcessingGate.providerFingerprint(
+                    baseURL: ModelRepository.shared.defaultBaseURL(for: "ollama"),
+                    apiKey: ""
+                ) ?? "",
+            ]
+            settings.setDictationPromptSelection(.default, for: .primary)
+            settings.setDictationPromptConfiguration(
+                SettingsStore.DictationPromptConfiguration(
+                    providerID: "ollama",
+                    modelName: "test-local-model"
+                ),
+                for: .default
+            )
+
+            let route = DictationProviderRoute.resolve(settings: settings, dictationSlot: .primary)
+
+            XCTAssertEqual(route.providerID, "ollama")
+            XCTAssertEqual(route.providerKey, "ollama")
+            XCTAssertEqual(route.model, "test-local-model")
+            XCTAssertEqual(settings.selectedProviderID, "openai")
+            XCTAssertEqual(settings.selectedModelByProvider["openai"], "gpt-4.1")
+
+            XCTAssertTrue(DictationAIPostProcessingGate.isConfigured(for: .primary))
+            XCTAssertEqual(settings.selectedProviderID, "openai")
+        }
+    }
+
+    func testDictationProviderRouteUsesAppBoundPromptConfiguration() {
+        self.withRestoredDefaults(
+            keys: [
+                self.dictationPromptProfilesKey,
+                self.appPromptBindingsKey,
+                self.dictationPromptRoutingScopeKey,
+                self.selectedProviderIDKey,
+                self.selectedModelByProviderKey,
+                self.verifiedProviderFingerprintsKey,
+                self.dictationPromptConfigurationsKey,
+                self.dictationPromptOffKey,
+                self.selectedDictationPromptIDKey,
+            ]
+        ) {
+            let settings = SettingsStore.shared
+            let appBundleID = "com.example.editor"
+            let profile = SettingsStore.DictationPromptProfile(
+                name: "Editor",
+                prompt: "Clean up text for this editor.",
+                mode: .dictate
+            )
+            settings.dictationPromptProfiles = [profile]
+            settings.appPromptBindings = [
+                SettingsStore.AppPromptBinding(
+                    mode: .dictate,
+                    appBundleID: appBundleID,
+                    appName: "Editor",
+                    promptID: profile.id
+                ),
+            ]
+            settings.dictationPromptRoutingScope = .allApps
+            settings.selectedProviderID = "openai"
+            settings.selectedModelByProvider = ["openai": "gpt-4.1", "ollama": "editor-model"]
+            settings.verifiedProviderFingerprints = [
+                "ollama": DictationAIPostProcessingGate.providerFingerprint(
+                    baseURL: ModelRepository.shared.defaultBaseURL(for: "ollama"),
+                    apiKey: ""
+                ) ?? "",
+            ]
+            settings.setDictationPromptSelection(.default, for: .primary)
+            settings.setDictationPromptConfiguration(
+                SettingsStore.DictationPromptConfiguration(
+                    providerID: "openai",
+                    modelName: "gpt-4.1"
+                ),
+                for: .default
+            )
+            settings.setDictationPromptConfiguration(
+                SettingsStore.DictationPromptConfiguration(
+                    providerID: "ollama",
+                    modelName: "editor-model"
+                ),
+                for: .profile(profile.id)
+            )
+
+            let route = DictationProviderRoute.resolve(
+                settings: settings,
+                dictationSlot: .primary,
+                appBundleID: appBundleID
+            )
+
+            XCTAssertEqual(route.providerID, "ollama")
+            XCTAssertEqual(route.model, "editor-model")
+            XCTAssertEqual(settings.selectedProviderID, "openai")
+            XCTAssertTrue(DictationAIPostProcessingGate.isConfigured(for: .primary, appBundleID: appBundleID))
         }
     }
 
