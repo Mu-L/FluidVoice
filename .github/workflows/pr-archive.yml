@@ -24,25 +24,54 @@ jobs:
       PR_NUMBER: ${{ github.event.pull_request.number }}
       AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
       PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      PR_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       APP_NAME: "FluidVoice #${{ github.event.pull_request.number }}"
       BUNDLE_IDENTIFIER: com.FluidApp.app.pr${{ github.event.pull_request.number }}
 
     steps:
-      - name: Validate PR merge commit
+      - name: Validate PR commits
         run: |
-          if [[ ! "$PR_MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "GitHub has not produced a merge commit for PR #$PR_NUMBER." >&2
-            echo "Resolve merge conflicts or rerun the workflow after GitHub computes it." >&2
+          set -euo pipefail
+
+          for commit in "$PR_HEAD_SHA" "$PR_BASE_SHA"; do
+            if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "GitHub did not provide a valid PR head and base commit." >&2
+              exit 1
+            fi
+          done
+
+      - name: Checkout exact PR head commit
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Merge target branch into PR head
+        run: |
+          set -euo pipefail
+
+          CHECKED_OUT_SHA=$(git rev-parse HEAD)
+          if [[ "$CHECKED_OUT_SHA" != "$PR_HEAD_SHA" ]]; then
+            echo "Expected PR head $PR_HEAD_SHA, checked out $CHECKED_OUT_SHA." >&2
             exit 1
           fi
 
-      - name: Checkout PR merge commit
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
-          fetch-depth: 1
-          persist-credentials: false
+          git remote add upstream "https://github.com/$GITHUB_REPOSITORY.git"
+          git fetch --no-tags upstream "$PR_BASE_SHA"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git merge --no-ff --no-edit "$PR_BASE_SHA"
+
+          PR_MERGE_SHA=$(git rev-parse HEAD)
+          if ! git merge-base --is-ancestor "$PR_HEAD_SHA" "$PR_MERGE_SHA" || \
+             ! git merge-base --is-ancestor "$PR_BASE_SHA" "$PR_MERGE_SHA"; then
+            echo "Generated merge commit does not contain the expected PR head and base." >&2
+            exit 1
+          fi
+
+          echo "PR_MERGE_SHA=$PR_MERGE_SHA" >> "$GITHUB_ENV"
 
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
