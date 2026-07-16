@@ -105,6 +105,21 @@ jobs:
           test -d "$APP_PATH"
           test -f "$INFO_PLIST"
           test -x "$EXECUTABLE_PATH"
+          test -x "$APP_PATH/Contents/Frameworks/MediaRemoteAdapter.framework/Versions/A/MediaRemoteAdapter"
+
+          RPATH_DEPENDENCY_COUNT=0
+          while IFS= read -r DEPENDENCY; do
+            RPATH_DEPENDENCY_COUNT=$((RPATH_DEPENDENCY_COUNT + 1))
+            EMBEDDED_PATH="$APP_PATH/Contents/Frameworks/${DEPENDENCY#@rpath/}"
+            if [[ ! -e "$EMBEDDED_PATH" ]]; then
+              echo "Missing embedded runtime dependency: $DEPENDENCY" >&2
+              exit 1
+            fi
+          done < <(otool -L "$EXECUTABLE_PATH" | awk '$1 ~ /^@rpath\// { print $1 }')
+          if [[ "$RPATH_DEPENDENCY_COUNT" -eq 0 ]]; then
+            echo "Expected at least one bundled @rpath dependency." >&2
+            exit 1
+          fi
 
           ACTUAL_BUNDLE_IDENTIFIER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")
           if [[ "$ACTUAL_BUNDLE_IDENTIFIER" != "$BUNDLE_IDENTIFIER" ]]; then
@@ -196,5 +211,5 @@ jobs:
           name: ${{ steps.package.outputs.artifact-name }}
           path: ${{ steps.package.outputs.artifact-path }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 5
           compression-level: 0
